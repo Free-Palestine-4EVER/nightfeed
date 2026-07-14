@@ -173,10 +173,11 @@ final class WeaponSystem {
 
     // MARK: - Per-frame update
 
-    /// Call once per frame AFTER PlayerController has moved and BEFORE XPSystem.update.
-    func update(deltaTime: TimeInterval, now: TimeInterval) {
+    /// Call once per frame AFTER PlayerController has moved and BEFORE XPSystem.update. `enemies` is the
+    /// single `PoolManager.shared.activeEnemies` snapshot GameScene computes once for the whole frame —
+    /// see EnemySpawner.update's doc comment for why this must not be re-fetched here independently.
+    func update(deltaTime: TimeInterval, now: TimeInterval, enemies: [Enemy]) {
         guard let player = player, !player.isDead else { return }
-        let enemies = PoolManager.shared.activeEnemies
 
         updateFangBoltFamily(deltaTime: deltaTime, now: now, player: player, enemies: enemies)
         updateBloodLance(deltaTime: deltaTime, now: now, player: player, enemies: enemies)

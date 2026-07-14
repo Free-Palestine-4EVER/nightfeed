@@ -326,11 +326,18 @@ final class GameScene: SKScene {
         player.updateBuffs(now: currentTime)
         cameraNode.position = player.position
 
+        // Computed exactly once per frame and threaded through every system below: PoolManager's
+        // `activeEnemies` re-filters + re-allocates over the whole enemy pool on every access (see its
+        // doc comment), so calling it separately here, in EnemySpawner, and in WeaponSystem — as this
+        // used to — tripled that cost every frame once the pool was busy under combat load. That's real,
+        // scaling-with-entity-count per-frame overhead, and exactly the kind of hitch that can make
+        // touchesMoved delivery *feel* dropped/delayed even though joystick input handling itself is fine.
+        let activeEnemies = PoolManager.shared.activeEnemies
+
         enemySpawner.update(deltaTime: deltaTime, now: currentTime, runTime: runTime,
-                             cameraPosition: cameraNode.position, viewSize: size)
-        weaponSystem.update(deltaTime: deltaTime, now: currentTime)
+                             cameraPosition: cameraNode.position, viewSize: size, enemies: activeEnemies)
+        weaponSystem.update(deltaTime: deltaTime, now: currentTime, enemies: activeEnemies)
         if !pets.isEmpty {
-            let activeEnemies = PoolManager.shared.activeEnemies
             for companion in pets {
                 companion.update(deltaTime: deltaTime, now: currentTime, playerPosition: player.position, player: player,
                                   enemies: activeEnemies, worldLayer: worldLayer) { [weak self] enemy in

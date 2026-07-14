@@ -58,12 +58,15 @@ final class EnemySpawner {
     // MARK: - Per-frame update
 
     /// Call once per frame, BEFORE WeaponSystem.update(). `cameraPosition`/`viewSize` describe the current
-    /// visible viewport in world coordinates.
+    /// visible viewport in world coordinates. `enemies` is the single `PoolManager.shared.activeEnemies`
+    /// snapshot for this frame — GameScene computes it exactly once and threads it through every system
+    /// that needs it, since that property re-filters + re-allocates the whole enemy pool on every access
+    /// (see PoolManager.activeEnemies' doc comment); calling it independently here, in WeaponSystem, and
+    /// for pets used to triple that cost every single frame.
     func update(deltaTime: TimeInterval, now: TimeInterval, runTime: TimeInterval,
-                cameraPosition: CGPoint, viewSize: CGSize) {
+                cameraPosition: CGPoint, viewSize: CGSize, enemies: [Enemy]) {
         let clampedDelta = min(deltaTime, Self.maxDeltaTime)
         let dt = CGFloat(clampedDelta)
-        let enemies = PoolManager.shared.activeEnemies
 
         // 1. Rebuild the spatial grid from every currently-active enemy.
         grid.clear()
