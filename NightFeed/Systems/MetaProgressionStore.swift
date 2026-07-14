@@ -297,6 +297,17 @@ final class MetaProgressionStore {
         defaults.set(capped.map { $0.rawValue }, forKey: PotionKey.startingPotions)
     }
 
+    // MARK: - Max All Stats (testing convenience)
+
+    /// Instantly sets every MetaUpgradeKind to its max tier, bypassing gold cost entirely — this
+    /// also unlocks every pet and skin, since those are just maxTier-1 MetaUpgradeKind cases. Purely
+    /// additive/non-destructive (nothing is lost), unlike resetAll(), so no confirmation is required.
+    func maxAllStats() {
+        for kind in MetaUpgradeKind.allCases {
+            setTier(kind.maxTier, for: kind)
+        }
+    }
+
     // MARK: - Reset
 
     /// Wipes ALL NightFeed progress — gold, every meta upgrade tier, best time, run count, gold rush/

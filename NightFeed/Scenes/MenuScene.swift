@@ -95,6 +95,7 @@ final class MenuScene: SKScene {
 
     // Low-prominence destructive control at the very bottom of the shop panel + its confirm modal.
     private var resetLink: SKLabelNode!
+    private var maxStatsLink: SKLabelNode!
     private var resetConfirmModal: SKNode!
     private var resetConfirmConfirmButton: SKShapeNode!
     private var resetConfirmCancelButton: SKShapeNode!
@@ -1093,6 +1094,19 @@ final class MenuScene: SKScene {
         link.zPosition = 2
         shopLayer.addChild(link)
         resetLink = link
+
+        // Non-destructive companion to Reset — instantly maxes every stat/pet/skin, bypassing gold
+        // cost. No confirmation needed since nothing is lost, unlike Reset.
+        let maxLink = SKLabelNode(fontNamed: "AvenirNext-Medium")
+        maxLink.text = "Max All Stats"
+        maxLink.fontSize = 10.5
+        maxLink.fontColor = Palette.dim
+        maxLink.horizontalAlignmentMode = .center
+        maxLink.verticalAlignmentMode = .center
+        maxLink.name = "maxAllStatsLink"
+        maxLink.zPosition = 2
+        shopLayer.addChild(maxLink)
+        maxStatsLink = maxLink
     }
 
     /// A small in-scene modal (SpriteKit has no native alert) — dim backdrop + danger card + CONFIRM/
@@ -1301,7 +1315,8 @@ final class MenuScene: SKScene {
             }
         }
 
-        resetLink.position = CGPoint(x: w / 2, y: panelBottom + 17)
+        resetLink.position = CGPoint(x: w / 2 - 80, y: panelBottom + 17)
+        maxStatsLink.position = CGPoint(x: w / 2 + 80, y: panelBottom + 17)
     }
 
     private func layoutPetChips(topY: CGFloat, centerX: CGFloat) {
@@ -1608,6 +1623,8 @@ final class MenuScene: SKScene {
             potionSelectorHintLabel.run(SKAction.sequence([SKAction.wait(forDuration: 0.05), SKAction.fadeIn(withDuration: 0.2)]))
             resetLink.alpha = 0
             resetLink.run(SKAction.sequence([SKAction.wait(forDuration: 0.05), SKAction.fadeIn(withDuration: 0.2)]))
+            maxStatsLink.alpha = 0
+            maxStatsLink.run(SKAction.sequence([SKAction.wait(forDuration: 0.05), SKAction.fadeIn(withDuration: 0.2)]))
         } else {
             // Safety net: the reset-confirm modal can't normally still be open when the shop closes
             // (topInteractiveName blocks shopClose/shopOverlay taps while it's up), but snap it shut
@@ -1692,7 +1709,7 @@ final class MenuScene: SKScene {
                 return name == "resetConfirmCancel" || name == "resetConfirmConfirm"
             }
             if isShopOpen {
-                if name == "shopOverlay" || name == "shopClose" || name == "autoReviveAction" || name == "speedBoostAction" || name == "resetProgressLink" { return true }
+                if name == "shopOverlay" || name == "shopClose" || name == "autoReviveAction" || name == "speedBoostAction" || name == "resetProgressLink" || name == "maxAllStatsLink" { return true }
                 if name.hasPrefix("shopTab_") { return true }
                 if name.hasPrefix("buy_") {
                     // Rows from the non-selected tab still exist at overlapping positions (only one
@@ -1740,6 +1757,8 @@ final class MenuScene: SKScene {
             apply(speedBoostCard)
         case "resetProgressLink":
             apply(resetLink)
+        case "maxAllStatsLink":
+            apply(maxStatsLink)
         case "resetConfirmCancel":
             apply(resetConfirmCancelButton)
         case "resetConfirmConfirm":
@@ -1793,6 +1812,11 @@ final class MenuScene: SKScene {
             handleSpeedBoostTap()
         case "resetProgressLink":
             setResetConfirmOpen(true)
+        case "maxAllStatsLink":
+            AudioManager.shared.playSFX(.buttonTap)
+            AudioManager.shared.hapticNotification(.success)
+            MetaProgressionStore.shared.maxAllStats()
+            refreshStats()
         case "resetConfirmCancel":
             setResetConfirmOpen(false)
         case "resetConfirmConfirm":
