@@ -4,9 +4,16 @@
 - **Team:** Zeid Naser — `6JW6JNN28V`
 - **SKU:** `NIGHTFEED001`
 - **Version:** 1.0 (build 1)
-- **Signed IPA:** `build-release/export/NightFeed.ipa` — already exported, signed with the real
-  Apple Distribution certificate and a matching App Store provisioning profile (`NightFeed App Store v2`,
-  both registered via the App Store Connect API). Ready to upload the moment the app record exists.
+- **Signed IPA:** `build-release/export/NightFeed.ipa` — freshly re-exported (2026-07-14), signed with the
+  real Apple Distribution certificate and a matching App Store provisioning profile (`NightFeed App Store v2`,
+  both registered via the App Store Connect API). Includes the full survival game plus the new Starfleet
+  Command meta-layer (starship/drones/planets, Crystals, marketplace) and Firebase backend integration.
+  Ready to upload the moment the app record exists.
+- **Note on Starfleet Command / IAP for this submission:** the Crystal packages are real StoreKit 2
+  code but the actual IAP product IDs don't exist in App Store Connect yet (same category of manual
+  step as the app record — see "Still to do" below). Until those are created, the Crystal Shop screen
+  will show no live pricing but won't crash; consider whether to submit this build as-is (Starfleet
+  Command usable without real purchases) or wait until IAP products are configured, your call.
 - **Primary locale:** English (US).
 
 ---
@@ -110,3 +117,18 @@ Ads' own bundled privacy manifest automatically at archive time.
    the metadata above, upload screenshots (one 6.9" is ready in `AppStoreScreenshots/`, I can generate
    more), upload the signed IPA, set pricing to Free, fill the age rating and privacy questionnaires,
    attach the build to the version, and submit for review.
+4. **Firebase CLI needs a re-login with the right account** — it's currently authenticated as
+   `abcdappel19@gmail.com`, which doesn't own the `nightfeed-2d0d7` project (that's under
+   `zzeidnaser@gmail.com`, the account that was used in the Firebase console). Run
+   `export PATH="$HOME/.local/node/bin:$PATH" && firebase login` in a real Terminal window (not
+   through me — it's an interactive browser flow) with the correct account, then tell me and I'll
+   deploy the Firestore rules/indexes/Cloud Functions (all written and compiling, just not deployed).
+5. **Register a Firebase Web app** (console → Project settings → Add app → Web) if you want the
+   website to ever talk to the same backend — not required for the iOS app, which uses the Apple app
+   registration already set up.
+6. **IAP product IDs** — create 5 Consumable in-app purchases in App Store Connect matching
+   `com.loom.nightfeed.crystals.pouch/satchel/chest/hoard/vault` (see backend/README.md) before the
+   Crystal Shop can process real purchases.
+7. **Attach `www.nightfeed.online` to the right Vercel project** — the site is live at
+   `https://nightfeed-ruby.vercel.app` (project name "nightfeed"), but the domain isn't pointed at it
+   yet. Vercel dashboard → nightfeed project → Settings → Domains → add `www.nightfeed.online`.
