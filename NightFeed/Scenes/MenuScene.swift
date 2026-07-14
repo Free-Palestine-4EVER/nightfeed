@@ -47,8 +47,6 @@ final class MenuScene: SKScene {
     private var subtitleLabel: SKLabelNode!
     private var bestTimeLabel: SKLabelNode!
     private var goldLabel: SKLabelNode!
-    private var backToCommandDeckButton: SKShapeNode!
-    private var backToCommandDeckLabel: SKLabelNode!
     private var playButton: SKShapeNode!
     private var playLabel: SKLabelNode!
     private var shopButton: SKShapeNode!
@@ -76,6 +74,7 @@ final class MenuScene: SKScene {
     // Shop category tabs — swap which subset of the 20 shopRows is visible/interactive inside
     // the same fixed panel bounds, rather than scrolling. See buildShopTabs()/refreshShopTabVisibility().
     private var shopTabButtons: [SKShapeNode] = []
+    private var shopTabIconLabels: [SKLabelNode] = []
     private var shopTabLabels: [SKLabelNode] = []
     private var selectedShopTab = 0
 
@@ -83,7 +82,25 @@ final class MenuScene: SKScene {
     private var petSelectorHintLabel: SKLabelNode!
     private var petChipNodes: [PetKind: PetChipNodes] = [:]
 
+    // Skin picker chips (single-select radio) — only meaningful inside the Skins tab.
+    private var skinSelectorHintLabel: SKLabelNode!
+    private var skinChipNodes: [PlayerSkinKind: SkinChipNodes] = [:]
+
+    // Starting-potion picker chips (multi-select up to startingPotionSlots) — Potions tab only.
+    private var potionSelectorHintLabel: SKLabelNode!
+    private var potionChipNodes: [PotionKind: PotionChipNodes] = [:]
+
+    // Soft violet glow behind the shop title, purely decorative.
+    private var shopTitleGlow: SKSpriteNode!
+
+    // Low-prominence destructive control at the very bottom of the shop panel + its confirm modal.
+    private var resetLink: SKLabelNode!
+    private var resetConfirmModal: SKNode!
+    private var resetConfirmConfirmButton: SKShapeNode!
+    private var resetConfirmCancelButton: SKShapeNode!
+
     private var isShopOpen = false
+    private var isResetConfirmOpen = false
     private var pressedNodeName: String?
     private var hasBuiltOnce = false
 
@@ -329,19 +346,6 @@ final class MenuScene: SKScene {
     // MARK: - Buttons
 
     private func buildButtons() {
-        // Back to the Starfleet Command home screen — MenuScene is now specifically the Survival Run
-        // menu, reached FROM CommandDeckScene's "SURVIVAL RUN" button, so it needs an explicit way back.
-        let (back, backText) = Self.makeButton(text: "◀ COMMAND DECK", width: 172, height: 36,
-                                                fill: Palette.rowFill, stroke: Palette.panelStroke,
-                                                textColor: Palette.moonlightDim,
-                                                fontSize: 12.5, fontName: "AvenirNext-DemiBold")
-        back.name = "backToCommandDeck"
-        backText.name = "backToCommandDeck"
-        contentLayer.addChild(back)
-        contentLayer.addChild(backText)
-        backToCommandDeckButton = back
-        backToCommandDeckLabel = backText
-
         let (play, playText) = Self.makeButton(text: "PLAY", width: 220, height: 68,
                                                 fill: Palette.ember, stroke: Palette.emberBright,
                                                 textColor: SKColor(red: 0.12, green: 0.03, blue: 0.02, alpha: 1),
@@ -594,6 +598,15 @@ final class MenuScene: SKScene {
         shopLayer.addChild(panel)
         shopPanel = panel
 
+        // Purely decorative soft glow that sits behind the title, giving the header a bit of
+        // "shrine altar" presence — no name, so it's invisible to hit-testing.
+        let titleGlow = SKSpriteNode(texture: ProceduralTextures.radialGlow(color: Palette.violet, radius: 100))
+        titleGlow.alpha = 0.3
+        titleGlow.zPosition = 1.5
+        titleGlow.blendMode = .add
+        shopLayer.addChild(titleGlow)
+        shopTitleGlow = titleGlow
+
         let title = SKLabelNode(fontNamed: "AvenirNext-Heavy")
         title.text = "THE SHRINE"
         title.fontSize = 24
@@ -630,6 +643,10 @@ final class MenuScene: SKScene {
 
         buildShopTabs()
         buildPetChips()
+        buildSkinChips()
+        buildPotionChips()
+        buildResetProgressLink()
+        buildResetConfirmModal()
 
         for (index, kind) in MetaUpgradeKind.allCases.enumerated() {
             shopRows[kind] = buildShopRow(for: kind, index: index)
@@ -649,33 +666,115 @@ final class MenuScene: SKScene {
         let maxedLabel: SKLabelNode
     }
 
+    /// Cheap-to-premium visual tiers, derived from each kind's base (tier-1) gold cost. Higher rarity
+    /// gets a bolder stroke + a touch of glow so the pricier shrine offerings (skins, familiars, the
+    /// second pet slot) read as more special at a glance, not just another identical row.
+    private enum ShopRarity {
+        case common, uncommon, rare, legendary
+
+        var accentColor: SKColor {
+            switch self {
+            case .common: return Palette.violet
+            case .uncommon: return SKColor(red: 0.4, green: 0.75, blue: 0.95, alpha: 1)
+            case .rare: return Palette.ember
+            case .legendary: return SKColor(red: 1.0, green: 0.86, blue: 0.4, alpha: 1)
+            }
+        }
+        var strokeAlpha: CGFloat {
+            switch self {
+            case .common: return 0.35
+            case .uncommon: return 0.55
+            case .rare: return 0.8
+            case .legendary: return 0.95
+            }
+        }
+        var lineWidth: CGFloat {
+            switch self {
+            case .common: return 1
+            case .uncommon: return 1.4
+            case .rare: return 1.8
+            case .legendary: return 2.2
+            }
+        }
+        var glowWidth: CGFloat {
+            switch self {
+            case .common, .uncommon: return 0
+            case .rare: return 2
+            case .legendary: return 4
+            }
+        }
+    }
+
+    private static func rarity(for kind: MetaUpgradeKind) -> ShopRarity {
+        switch kind.cost(forTier: 1) {
+        case ..<100: return .common
+        case 100..<200: return .uncommon
+        case 200..<350: return .rare
+        default: return .legendary
+        }
+    }
+
+    /// A soft top-to-bottom sheen shared by every row card (cheap: rendered once, reused everywhere)
+    /// — sits just above the card fill and just below every label, giving the flat fill a hint of
+    /// glassy depth without a new texture per row.
+    private static let rowSheenTexture: SKTexture =
+        alphaGradientTexture(topAlpha: 0.07, bottomAlpha: 0.0, size: CGSize(width: 4, height: 128))
+
     private func buildShopRow(for kind: MetaUpgradeKind, index: Int) -> ShopRowNodes {
         let container = SKNode()
         container.zPosition = 2
         shopLayer.addChild(container)
 
-        let bg = SKShapeNode(rectOf: CGSize(width: Self.rowWidth, height: Self.rowHeight), cornerRadius: 12)
+        let tier = Self.rarity(for: kind)
+
+        // Card fill + sheen + rarity accent bar are all pushed to negative local zPositions so they
+        // sit behind every label/button below (which keep their default zPosition 0) without having
+        // to touch every existing label's zPosition.
+        let bg = SKShapeNode(rectOf: CGSize(width: Self.rowWidth, height: Self.rowHeight), cornerRadius: 14)
         bg.fillColor = Palette.rowFill
-        bg.strokeColor = Palette.panelStroke.withAlphaComponent(0.4)
-        bg.lineWidth = 1
+        bg.strokeColor = tier.accentColor.withAlphaComponent(tier.strokeAlpha)
+        bg.lineWidth = tier.lineWidth
+        bg.glowWidth = tier.glowWidth
+        bg.zPosition = -1
         container.addChild(bg)
 
-        let name = SKLabelNode(fontNamed: "AvenirNext-DemiBold")
+        let sheen = SKSpriteNode(texture: Self.rowSheenTexture)
+        sheen.size = CGSize(width: Self.rowWidth - 24, height: Self.rowHeight - 18)
+        sheen.zPosition = -0.5
+        container.addChild(sheen)
+
+        let accentBar = SKShapeNode(rectOf: CGSize(width: 4, height: Self.rowHeight - 18), cornerRadius: 2)
+        accentBar.fillColor = tier.accentColor
+        accentBar.strokeColor = .clear
+        accentBar.alpha = 0.85
+        accentBar.position = CGPoint(x: -Self.rowWidth / 2 + 9, y: 0)
+        accentBar.zPosition = -0.3
+        container.addChild(accentBar)
+
+        let name = SKLabelNode(fontNamed: "AvenirNext-Bold")
         name.text = kind.displayName
         name.fontSize = 16
         name.fontColor = Palette.moonlight
         name.horizontalAlignmentMode = .left
         name.verticalAlignmentMode = .center
-        name.position = CGPoint(x: -Self.rowWidth / 2 + 14, y: Self.rowHeight / 2 - 16)
+        name.position = CGPoint(x: -Self.rowWidth / 2 + 18, y: Self.rowHeight / 2 - 16)
         container.addChild(name)
 
-        let tier = SKLabelNode(fontNamed: "AvenirNext-DemiBold")
-        tier.fontSize = 12
-        tier.fontColor = Palette.emberBright
-        tier.horizontalAlignmentMode = .right
-        tier.verticalAlignmentMode = .center
-        tier.position = CGPoint(x: Self.rowWidth / 2 - 14, y: Self.rowHeight / 2 - 16)
-        container.addChild(tier)
+        let tierPill = SKShapeNode(rectOf: CGSize(width: 58, height: 18), cornerRadius: 9)
+        tierPill.fillColor = tier.accentColor.withAlphaComponent(0.14)
+        tierPill.strokeColor = tier.accentColor.withAlphaComponent(0.45)
+        tierPill.lineWidth = 1
+        tierPill.position = CGPoint(x: Self.rowWidth / 2 - 14 - 29, y: Self.rowHeight / 2 - 16)
+        tierPill.zPosition = -0.2
+        container.addChild(tierPill)
+
+        let tierLabel = SKLabelNode(fontNamed: "AvenirNext-DemiBold")
+        tierLabel.fontSize = 11.5
+        tierLabel.fontColor = Palette.emberBright
+        tierLabel.horizontalAlignmentMode = .right
+        tierLabel.verticalAlignmentMode = .center
+        tierLabel.position = CGPoint(x: Self.rowWidth / 2 - 14, y: Self.rowHeight / 2 - 16)
+        container.addChild(tierLabel)
 
         let flavor = SKLabelNode(fontNamed: "AvenirNext-Regular")
         flavor.text = kind.flavorText
@@ -684,9 +783,9 @@ final class MenuScene: SKScene {
         flavor.horizontalAlignmentMode = .left
         flavor.verticalAlignmentMode = .top
         flavor.numberOfLines = 2
-        flavor.preferredMaxLayoutWidth = Self.rowWidth - 100
+        flavor.preferredMaxLayoutWidth = Self.rowWidth - 104
         flavor.lineBreakMode = .byWordWrapping
-        flavor.position = CGPoint(x: -Self.rowWidth / 2 + 14, y: Self.rowHeight / 2 - 34)
+        flavor.position = CGPoint(x: -Self.rowWidth / 2 + 18, y: Self.rowHeight / 2 - 35)
         container.addChild(flavor)
 
         let (buy, buyText) = Self.makeButton(text: "BUY", width: 74, height: 32,
@@ -710,7 +809,7 @@ final class MenuScene: SKScene {
         maxed.isHidden = true
         container.addChild(maxed)
 
-        return ShopRowNodes(container: container, background: bg, nameLabel: name, tierLabel: tier,
+        return ShopRowNodes(container: container, background: bg, nameLabel: name, tierLabel: tierLabel,
                              flavorLabel: flavor, buyButton: buy, buyLabel: buyText, maxedLabel: maxed)
     }
 
@@ -726,32 +825,60 @@ final class MenuScene: SKScene {
     private static let powersCategory: [MetaUpgradeKind] = [
         .lifesteal, .dodgeChance, .xpGainBonus, .potionLuck, .reviveCharge, .weaponMastery, .extraChoices
     ]
-    private static let shopCategories: [[MetaUpgradeKind]] = [statsCategory, familiarsCategory, powersCategory]
-    private static let shopTabTitles = ["STATS", "FAMILIARS", "POWERS"]
+    private static let skinsCategory: [MetaUpgradeKind] = [
+        .skinCrimsonFang, .skinMoonlitVeil, .skinVoidReaper, .skinEmberSovereign
+    ]
+    private static let potionsCategory: [MetaUpgradeKind] = [.potionMastery]
+    private static let shopCategories: [[MetaUpgradeKind]] = [
+        statsCategory, familiarsCategory, powersCategory, skinsCategory, potionsCategory
+    ]
+    private static let shopTabTitles = ["STATS", "PETS", "POWERS", "SKINS", "POTIONS"]
+    private static let shopTabIcons = ["⚔️", "🐾", "✨", "🧥", "🧪"]
     private static let familiarsTabIndex = 1
-    private static let maxCategoryRowCount = max(statsCategory.count, familiarsCategory.count, powersCategory.count)
+    private static let skinsTabIndex = 3
+    private static let potionsTabIndex = 4
+    private static let maxCategoryRowCount = max(statsCategory.count, familiarsCategory.count, powersCategory.count,
+                                                  skinsCategory.count, potionsCategory.count)
     /// Total vertical space consumed above the item list: title + close + gold label + tab row.
-    private static let shopHeaderTotalHeight: CGFloat = 190
+    private static let shopHeaderTotalHeight: CGFloat = 200
 
     private static func category(for kind: MetaUpgradeKind) -> Int {
         if statsCategory.contains(kind) { return 0 }
-        if familiarsCategory.contains(kind) { return 1 }
+        if familiarsCategory.contains(kind) { return familiarsTabIndex }
+        if skinsCategory.contains(kind) { return skinsTabIndex }
+        if potionsCategory.contains(kind) { return potionsTabIndex }
         return 2
     }
 
+    /// Two-line tab buttons (icon on top, short label below) rather than a single icon+text line —
+    /// with 5 tabs squeezed into the same panel width the old 3-tab single-row style used, a single
+    /// line would force either a tiny illegible font or clipped text.
+    private static let shopTabWidth: CGFloat = 63
+    private static let shopTabHeight: CGFloat = 40
+
     private func buildShopTabs() {
         for (index, title) in Self.shopTabTitles.enumerated() {
-            let (btn, label) = Self.makeButton(text: title, width: 98, height: 30,
+            let (btn, label) = Self.makeButton(text: title, width: Self.shopTabWidth, height: Self.shopTabHeight,
                                                 fill: Palette.rowFill, stroke: Palette.panelStroke,
-                                                textColor: Palette.moonlightDim, fontSize: 12, fontName: "AvenirNext-DemiBold")
+                                                textColor: Palette.moonlightDim, fontSize: 8.5, fontName: "AvenirNext-DemiBold")
             btn.name = "shopTab_\(index)"
             label.name = "shopTab_\(index)"
+            label.position = CGPoint(x: 0, y: -9)
             btn.zPosition = 2
             label.zPosition = 3
             shopLayer.addChild(btn)
             shopLayer.addChild(label)
             shopTabButtons.append(btn)
             shopTabLabels.append(label)
+
+            let icon = SKLabelNode(text: Self.shopTabIcons[index])
+            icon.name = "shopTab_\(index)"
+            icon.fontSize = 15
+            icon.verticalAlignmentMode = .center
+            icon.position = CGPoint(x: 0, y: 8)
+            icon.zPosition = 3
+            shopLayer.addChild(icon)
+            shopTabIconLabels.append(icon)
         }
     }
 
@@ -816,6 +943,242 @@ final class MenuScene: SKScene {
         }
     }
 
+    // MARK: - Skin picker (single-select — equipping one deselects all others)
+
+    private struct SkinChipNodes {
+        let container: SKNode
+        let background: SKShapeNode
+        let swatch: SKSpriteNode
+        let label: SKLabelNode
+        let statusLabel: SKLabelNode
+    }
+
+    private static let skinChipWidth: CGFloat = 94
+    private static let skinChipHeight: CGFloat = 78
+
+    private func buildSkinChips() {
+        let hint = SKLabelNode(fontNamed: "AvenirNext-DemiBold")
+        hint.text = Self.letterSpaced("YOUR LOOK")
+        hint.fontSize = 11
+        hint.fontColor = Palette.moonlightDim
+        hint.horizontalAlignmentMode = .center
+        hint.verticalAlignmentMode = .center
+        hint.zPosition = 2
+        shopLayer.addChild(hint)
+        skinSelectorHintLabel = hint
+
+        for kind in PlayerSkinKind.allCases {
+            let container = SKNode()
+            container.zPosition = 2
+            shopLayer.addChild(container)
+
+            let bg = SKShapeNode(rectOf: CGSize(width: Self.skinChipWidth, height: Self.skinChipHeight), cornerRadius: 12)
+            bg.fillColor = Palette.rowFill
+            bg.strokeColor = Palette.panelStroke.withAlphaComponent(0.4)
+            bg.lineWidth = 1.5
+            bg.name = "selectSkin_\(kind.rawValue)"
+            container.addChild(bg)
+
+            let palette = Self.skinSwatchPalette(for: kind)
+            let swatch = SKSpriteNode(texture: Self.skinSwatchTexture(cloak: palette.cloak, trim: palette.trim, core: palette.core, diameter: 34))
+            swatch.position = CGPoint(x: 0, y: 17)
+            swatch.name = "selectSkin_\(kind.rawValue)"
+            container.addChild(swatch)
+
+            let label = SKLabelNode(fontNamed: "AvenirNext-DemiBold")
+            label.text = kind.displayName
+            label.fontSize = 9.5
+            label.fontColor = Palette.moonlight
+            label.horizontalAlignmentMode = .center
+            label.verticalAlignmentMode = .center
+            label.numberOfLines = 2
+            label.preferredMaxLayoutWidth = Self.skinChipWidth - 8
+            label.lineBreakMode = .byWordWrapping
+            label.position = CGPoint(x: 0, y: -9)
+            label.name = "selectSkin_\(kind.rawValue)"
+            container.addChild(label)
+
+            let status = SKLabelNode(fontNamed: "AvenirNext-Bold")
+            status.fontSize = 8
+            status.fontColor = Palette.moonlightDim
+            status.horizontalAlignmentMode = .center
+            status.verticalAlignmentMode = .center
+            status.position = CGPoint(x: 0, y: -Self.skinChipHeight / 2 + 9)
+            status.name = "selectSkin_\(kind.rawValue)"
+            container.addChild(status)
+
+            skinChipNodes[kind] = SkinChipNodes(container: container, background: bg, swatch: swatch, label: label, statusLabel: status)
+        }
+    }
+
+    // MARK: - Starting potion picker (multi-select up to startingPotionSlots, oldest drops out)
+
+    private struct PotionChipNodes {
+        let container: SKNode
+        let background: SKShapeNode
+        let icon: SKSpriteNode
+        let label: SKLabelNode
+        let statusLabel: SKLabelNode
+    }
+
+    private static let potionChipWidth: CGFloat = 74
+    private static let potionChipHeight: CGFloat = 66
+
+    private func buildPotionChips() {
+        let hint = SKLabelNode(fontNamed: "AvenirNext-DemiBold")
+        hint.fontSize = 10.5
+        hint.fontColor = Palette.moonlightDim
+        hint.horizontalAlignmentMode = .center
+        hint.verticalAlignmentMode = .center
+        hint.numberOfLines = 2
+        hint.preferredMaxLayoutWidth = Self.rowWidth - 20
+        hint.lineBreakMode = .byWordWrapping
+        hint.zPosition = 2
+        shopLayer.addChild(hint)
+        potionSelectorHintLabel = hint
+
+        for kind in PotionKind.allCases {
+            let container = SKNode()
+            container.zPosition = 2
+            shopLayer.addChild(container)
+
+            let bg = SKShapeNode(rectOf: CGSize(width: Self.potionChipWidth, height: Self.potionChipHeight), cornerRadius: 12)
+            bg.fillColor = Palette.rowFill
+            bg.strokeColor = Palette.panelStroke.withAlphaComponent(0.4)
+            bg.lineWidth = 1.5
+            bg.name = "selectPotion_\(kind.rawValue)"
+            container.addChild(bg)
+
+            let icon = SKSpriteNode(texture: Self.potionIconTexture(color: Potion.accentColor(for: kind), diameter: 26))
+            icon.position = CGPoint(x: 0, y: 14)
+            icon.name = "selectPotion_\(kind.rawValue)"
+            container.addChild(icon)
+
+            let label = SKLabelNode(fontNamed: "AvenirNext-DemiBold")
+            label.text = kind.displayName
+            label.fontSize = 8.5
+            label.fontColor = Palette.moonlight
+            label.horizontalAlignmentMode = .center
+            label.verticalAlignmentMode = .center
+            label.numberOfLines = 2
+            label.preferredMaxLayoutWidth = Self.potionChipWidth - 6
+            label.lineBreakMode = .byWordWrapping
+            label.position = CGPoint(x: 0, y: -8)
+            label.name = "selectPotion_\(kind.rawValue)"
+            container.addChild(label)
+
+            let status = SKLabelNode(fontNamed: "AvenirNext-Bold")
+            status.fontSize = 7
+            status.fontColor = Palette.moonlightDim
+            status.horizontalAlignmentMode = .center
+            status.verticalAlignmentMode = .center
+            status.position = CGPoint(x: 0, y: -Self.potionChipHeight / 2 + 8)
+            status.name = "selectPotion_\(kind.rawValue)"
+            container.addChild(status)
+
+            potionChipNodes[kind] = PotionChipNodes(container: container, background: bg, icon: icon, label: label, statusLabel: status)
+        }
+    }
+
+    // MARK: - Reset All Progress (destructive, low-prominence link + confirm modal)
+
+    private func buildResetProgressLink() {
+        let link = SKLabelNode(fontNamed: "AvenirNext-Medium")
+        link.text = "Reset All Progress"
+        link.fontSize = 10.5
+        link.fontColor = Palette.dim
+        link.horizontalAlignmentMode = .center
+        link.verticalAlignmentMode = .center
+        link.name = "resetProgressLink"
+        link.zPosition = 2
+        shopLayer.addChild(link)
+        resetLink = link
+    }
+
+    /// A small in-scene modal (SpriteKit has no native alert) — dim backdrop + danger card + CONFIRM/
+    /// CANCEL, mirroring GameScene's revive-prompt convention (dim + staggered pop-in buttons). Built
+    /// once as a single self-contained node so layout only ever needs to reposition its root each
+    /// resize, unlike the sibling-node shop panel above.
+    private func buildResetConfirmModal() {
+        let modal = SKNode()
+        modal.zPosition = 30
+        modal.alpha = 0
+        modal.isHidden = true
+        shopLayer.addChild(modal)
+        resetConfirmModal = modal
+
+        let dim = SKShapeNode(rectOf: CGSize(width: 4000, height: 4000))
+        dim.name = "resetConfirmCancel"
+        dim.fillColor = SKColor.black.withAlphaComponent(0.72)
+        dim.strokeColor = .clear
+        dim.zPosition = 0
+        modal.addChild(dim)
+
+        let card = SKShapeNode(rectOf: CGSize(width: 292, height: 214), cornerRadius: 20)
+        card.fillColor = Palette.panelFill
+        card.strokeColor = Palette.blood.withAlphaComponent(0.85)
+        card.lineWidth = 2
+        card.glowWidth = 4
+        card.zPosition = 1
+        modal.addChild(card)
+
+        let warnIcon = SKLabelNode(text: "⚠️")
+        warnIcon.fontSize = 28
+        warnIcon.verticalAlignmentMode = .center
+        warnIcon.position = CGPoint(x: 0, y: 70)
+        warnIcon.zPosition = 2
+        modal.addChild(warnIcon)
+
+        let title = SKLabelNode(fontNamed: "AvenirNext-Heavy")
+        title.text = "RESET ALL PROGRESS?"
+        title.fontSize = 16.5
+        title.fontColor = Palette.blood
+        title.horizontalAlignmentMode = .center
+        title.verticalAlignmentMode = .center
+        title.position = CGPoint(x: 0, y: 40)
+        title.zPosition = 2
+        modal.addChild(title)
+
+        let message = SKLabelNode(fontNamed: "AvenirNext-Medium")
+        message.text = "Wipes your gold, every upgrade tier, pets, skins and potions. This cannot be undone."
+        message.fontSize = 12
+        message.fontColor = Palette.moonlightDim
+        message.horizontalAlignmentMode = .center
+        message.verticalAlignmentMode = .center
+        message.numberOfLines = 3
+        message.preferredMaxLayoutWidth = 246
+        message.lineBreakMode = .byWordWrapping
+        message.position = CGPoint(x: 0, y: 6)
+        message.zPosition = 2
+        modal.addChild(message)
+
+        let (confirmBtn, confirmLabel) = Self.makeButton(text: "RESET EVERYTHING", width: 236, height: 44,
+                                                           fill: Palette.blood, stroke: SKColor(red: 1, green: 0.3, blue: 0.35, alpha: 1),
+                                                           textColor: Palette.moonlight, fontSize: 13.5, fontName: "AvenirNext-Heavy")
+        confirmBtn.name = "resetConfirmConfirm"
+        confirmLabel.name = "resetConfirmConfirm"
+        confirmBtn.position = CGPoint(x: 0, y: -44)
+        confirmLabel.position = confirmBtn.position
+        confirmBtn.zPosition = 2
+        confirmLabel.zPosition = 3
+        modal.addChild(confirmBtn)
+        modal.addChild(confirmLabel)
+        resetConfirmConfirmButton = confirmBtn
+
+        let (cancelBtn, cancelLabel) = Self.makeButton(text: "CANCEL", width: 170, height: 34,
+                                                         fill: Palette.rowFill, stroke: Palette.panelStroke,
+                                                         textColor: Palette.moonlight, fontSize: 12.5, fontName: "AvenirNext-DemiBold")
+        cancelBtn.name = "resetConfirmCancel"
+        cancelLabel.name = "resetConfirmCancel"
+        cancelBtn.position = CGPoint(x: 0, y: -86)
+        cancelLabel.position = cancelBtn.position
+        cancelBtn.zPosition = 2
+        cancelLabel.zPosition = 3
+        modal.addChild(cancelBtn)
+        modal.addChild(cancelLabel)
+        resetConfirmCancelButton = cancelBtn
+    }
+
     private static let rowWidth: CGFloat = 320
     private static let rowHeight: CGFloat = 68
     private static let rowSpacing: CGFloat = 8
@@ -829,9 +1192,6 @@ final class MenuScene: SKScene {
             bg.size = CGSize(width: w, height: h)
             bg.position = CGPoint(x: w / 2, y: h / 2)
         }
-
-        backToCommandDeckButton.position = CGPoint(x: 16 + 86, y: h - 40)
-        backToCommandDeckLabel.position = backToCommandDeckButton.position
 
         let moonPos = CGPoint(x: w * 0.80, y: h * 0.87)
         moonNode.position = moonPos
@@ -890,29 +1250,37 @@ final class MenuScene: SKScene {
         let w = size.width, h = size.height
         let panelWidth = min(w - 32, Self.rowWidth + 40)
         let listHeight = CGFloat(Self.maxCategoryRowCount) * Self.rowHeight + CGFloat(Self.maxCategoryRowCount - 1) * Self.rowSpacing
-        let panelHeight = min(h - 96, Self.shopHeaderTotalHeight + listHeight + 28)
+        // +34 (rather than the old +28) reserves just enough extra room at the very bottom of the
+        // panel for the small "Reset All Progress" link — deliberately tight/low-prominence, not a
+        // full extra row.
+        let panelHeight = min(h - 96, Self.shopHeaderTotalHeight + listHeight + 34)
 
         let panelRect = CGRect(x: -panelWidth / 2, y: -panelHeight / 2, width: panelWidth, height: panelHeight)
         shopPanel.path = CGPath(roundedRect: panelRect, cornerWidth: 20, cornerHeight: 20, transform: nil)
         shopPanel.position = CGPoint(x: w / 2, y: h / 2)
 
         shopOverlay.position = CGPoint(x: w / 2, y: h / 2)
+        resetConfirmModal.position = CGPoint(x: w / 2, y: h / 2)
 
         let panelTop = shopPanel.position.y + panelHeight / 2
+        let panelBottom = shopPanel.position.y - panelHeight / 2
         shopTitleLabel.position = CGPoint(x: w / 2, y: panelTop - 34)
+        shopTitleGlow.position = shopTitleLabel.position
         shopCloseButton.position = CGPoint(x: w / 2 + panelWidth / 2 - 32, y: panelTop - 30)
         shopCloseLabel.position = shopCloseButton.position
         shopGoldLabel.position = CGPoint(x: w / 2, y: panelTop - 62)
         autoReviveCard.position = CGPoint(x: w / 2, y: panelTop - 92)
         speedBoostCard.position = CGPoint(x: w / 2, y: panelTop - 126)
 
-        let tabsY = panelTop - 160
-        let tabWidth: CGFloat = 98, tabGap: CGFloat = 8
+        let tabsY = panelTop - 165
+        let tabWidth = Self.shopTabWidth, tabGap: CGFloat = 6
         let totalTabsWidth = CGFloat(shopTabButtons.count) * tabWidth + CGFloat(max(0, shopTabButtons.count - 1)) * tabGap
         var tabX = w / 2 - totalTabsWidth / 2 + tabWidth / 2
         for i in 0..<shopTabButtons.count {
-            shopTabButtons[i].position = CGPoint(x: tabX, y: tabsY)
-            shopTabLabels[i].position = shopTabButtons[i].position
+            let tabPos = CGPoint(x: tabX, y: tabsY)
+            shopTabButtons[i].position = tabPos
+            shopTabLabels[i].position = CGPoint(x: tabPos.x, y: tabPos.y - 9)
+            shopTabIconLabels[i].position = CGPoint(x: tabPos.x, y: tabPos.y + 8)
             tabX += tabWidth + tabGap
         }
 
@@ -926,8 +1294,14 @@ final class MenuScene: SKScene {
             }
             if categoryIndex == Self.familiarsTabIndex {
                 layoutPetChips(topY: rowY, centerX: w / 2)
+            } else if categoryIndex == Self.skinsTabIndex {
+                layoutSkinChips(topY: rowY, centerX: w / 2)
+            } else if categoryIndex == Self.potionsTabIndex {
+                layoutPotionChips(topY: rowY, centerX: w / 2)
             }
         }
+
+        resetLink.position = CGPoint(x: w / 2, y: panelBottom + 17)
     }
 
     private func layoutPetChips(topY: CGFloat, centerX: CGFloat) {
@@ -946,6 +1320,46 @@ final class MenuScene: SKScene {
         }
     }
 
+    private func layoutSkinChips(topY: CGFloat, centerX: CGFloat) {
+        let headerY = topY - 12
+        skinSelectorHintLabel.position = CGPoint(x: centerX, y: headerY)
+        let gridTop = headerY - 24
+        Self.layoutGrid(items: PlayerSkinKind.allCases, chipWidth: Self.skinChipWidth, chipHeight: Self.skinChipHeight,
+                         gapX: 10, gapY: 10, perRow: 3, topY: gridTop, centerX: centerX) { kind, position in
+            self.skinChipNodes[kind]?.container.position = position
+        }
+    }
+
+    private func layoutPotionChips(topY: CGFloat, centerX: CGFloat) {
+        let headerY = topY - 16
+        potionSelectorHintLabel.position = CGPoint(x: centerX, y: headerY)
+        let gridTop = headerY - 26
+        Self.layoutGrid(items: PotionKind.allCases, chipWidth: Self.potionChipWidth, chipHeight: Self.potionChipHeight,
+                         gapX: 8, gapY: 8, perRow: 4, topY: gridTop, centerX: centerX) { kind, position in
+            self.potionChipNodes[kind]?.container.position = position
+        }
+    }
+
+    /// Wraps `items` into left-to-right, top-to-bottom rows of at most `perRow`, each row independently
+    /// centered on `centerX` — shared by the skin and potion pickers (pet chips keep their own simpler
+    /// single-row layout above, unchanged from before this redesign).
+    private static func layoutGrid<T>(items: [T], chipWidth: CGFloat, chipHeight: CGFloat, gapX: CGFloat, gapY: CGFloat,
+                                       perRow: Int, topY: CGFloat, centerX: CGFloat, place: (T, CGPoint) -> Void) {
+        var index = 0
+        var y = topY
+        while index < items.count {
+            let itemsInRow = min(perRow, items.count - index)
+            let rowWidth = CGFloat(itemsInRow) * chipWidth + CGFloat(max(0, itemsInRow - 1)) * gapX
+            var x = centerX - rowWidth / 2 + chipWidth / 2
+            for _ in 0..<itemsInRow {
+                place(items[index], CGPoint(x: x, y: y - chipHeight / 2))
+                x += chipWidth + gapX
+                index += 1
+            }
+            y -= (chipHeight + gapY)
+        }
+    }
+
     // MARK: - Stats refresh
 
     private func refreshStats() {
@@ -956,6 +1370,8 @@ final class MenuScene: SKScene {
             refreshShopRow(kind)
         }
         refreshPetChips()
+        refreshSkinChips()
+        refreshPotionChips()
         shopGoldLabel.text = "YOUR GOLD:  \(MetaProgressionStore.shared.gold)"
         refreshGoldRushCard()
         refreshAutoReviveCard()
@@ -975,6 +1391,9 @@ final class MenuScene: SKScene {
             row.buyLabel.text = "\(cost)g"
             row.buyButton.alpha = canAfford ? 1.0 : 0.4
             row.buyLabel.alpha = canAfford ? 1.0 : 0.6
+            // A small glow kicks in once you can actually afford it — a cheap, constantly-updating
+            // affordance cue on top of the existing alpha dim/undim.
+            row.buyButton.glowWidth = canAfford ? 2.5 : 0
             row.buyButton.name = "buy_\(kind.rawValue)"
             row.buyLabel.name = "buy_\(kind.rawValue)"
         } else {
@@ -1020,6 +1439,99 @@ final class MenuScene: SKScene {
         }
     }
 
+    /// Restyles each skin chip: dimmed/locked if not owned, ember-highlighted if it's the one
+    /// currently equipped (single-select — see MetaProgressionStore.selectedSkin), plain otherwise.
+    private func refreshSkinChips() {
+        let store = MetaProgressionStore.shared
+        let selected = store.selectedSkin
+        for kind in PlayerSkinKind.allCases {
+            guard let chip = skinChipNodes[kind] else { continue }
+            let owned = store.isSkinOwned(kind)
+            let isSelected = owned && kind == selected
+            chip.container.alpha = owned ? 1.0 : 0.55
+            chip.swatch.alpha = owned ? 1.0 : 0.5
+            if isSelected {
+                chip.background.fillColor = Palette.ember.withAlphaComponent(0.30)
+                chip.background.strokeColor = Palette.emberBright
+                chip.background.lineWidth = 2.2
+                chip.background.glowWidth = 3
+                chip.statusLabel.text = "✓ EQUIPPED"
+                chip.statusLabel.fontColor = Palette.emberBright
+                chip.label.fontColor = Palette.moonlight
+            } else if owned {
+                chip.background.fillColor = Palette.rowFill
+                chip.background.strokeColor = Palette.panelStroke.withAlphaComponent(0.5)
+                chip.background.lineWidth = 1.5
+                chip.background.glowWidth = 0
+                chip.statusLabel.text = "tap to equip"
+                chip.statusLabel.fontColor = Palette.moonlightDim
+                chip.label.fontColor = Palette.moonlight
+            } else {
+                chip.background.fillColor = Palette.rowFill
+                chip.background.strokeColor = Palette.panelStroke.withAlphaComponent(0.25)
+                chip.background.lineWidth = 1
+                chip.background.glowWidth = 0
+                chip.statusLabel.text = "locked"
+                chip.statusLabel.fontColor = Palette.dim
+                chip.label.fontColor = Palette.moonlightDim
+            }
+        }
+    }
+
+    /// Restyles each potion chip: dimmed+"instant only" for kinds that can never be a starting potion
+    /// (see MetaProgressionStore.selectedStartingPotions' filter), dimmed+"locked" while no Potion
+    /// Mastery tier has been bought yet, highlighted if currently selected, plain otherwise. Also
+    /// updates the hint label above the grid, including the "buy Potion Mastery first" nudge.
+    private func refreshPotionChips() {
+        let store = MetaProgressionStore.shared
+        let slots = store.startingPotionSlots
+        let selected = Set(store.selectedStartingPotions())
+        if slots > 0 {
+            potionSelectorHintLabel.text = "STARTING VIALS · \(selected.count)/\(slots) SELECTED"
+            potionSelectorHintLabel.fontColor = Palette.moonlightDim
+        } else {
+            potionSelectorHintLabel.text = "Buy Potion Mastery to select starting potions."
+            potionSelectorHintLabel.fontColor = Palette.dim
+        }
+        for kind in PotionKind.allCases {
+            guard let chip = potionChipNodes[kind] else { continue }
+            let eligible = !kind.isInstant
+            let unlocked = eligible && slots > 0
+            let isSelected = unlocked && selected.contains(kind)
+            chip.container.alpha = !eligible ? 0.4 : (slots > 0 ? 1.0 : 0.5)
+            if isSelected {
+                let accent = Potion.accentColor(for: kind)
+                chip.background.fillColor = accent.withAlphaComponent(0.28)
+                chip.background.strokeColor = accent
+                chip.background.lineWidth = 2.2
+                chip.background.glowWidth = 3
+                chip.statusLabel.text = "✓ selected"
+                chip.statusLabel.fontColor = Palette.moonlight
+            } else if unlocked {
+                chip.background.fillColor = Palette.rowFill
+                chip.background.strokeColor = Palette.panelStroke.withAlphaComponent(0.5)
+                chip.background.lineWidth = 1.5
+                chip.background.glowWidth = 0
+                chip.statusLabel.text = "tap to select"
+                chip.statusLabel.fontColor = Palette.moonlightDim
+            } else if !eligible {
+                chip.background.fillColor = Palette.rowFill
+                chip.background.strokeColor = Palette.panelStroke.withAlphaComponent(0.3)
+                chip.background.lineWidth = 1
+                chip.background.glowWidth = 0
+                chip.statusLabel.text = "instant only"
+                chip.statusLabel.fontColor = Palette.dim
+            } else {
+                chip.background.fillColor = Palette.rowFill
+                chip.background.strokeColor = Palette.panelStroke.withAlphaComponent(0.25)
+                chip.background.lineWidth = 1
+                chip.background.glowWidth = 0
+                chip.statusLabel.text = "locked"
+                chip.statusLabel.fontColor = Palette.dim
+            }
+        }
+    }
+
     // MARK: - Shop open/close
 
     /// Shows only the rows/chips belonging to `selectedShopTab`, hiding the rest. Hiding here is
@@ -1034,11 +1546,27 @@ final class MenuScene: SKScene {
         for chip in petChipNodes.values {
             chip.container.isHidden = !familiarsVisible
         }
+
+        let skinsVisible = selectedShopTab == Self.skinsTabIndex
+        skinSelectorHintLabel.isHidden = !skinsVisible
+        for chip in skinChipNodes.values {
+            chip.container.isHidden = !skinsVisible
+        }
+
+        let potionsVisible = selectedShopTab == Self.potionsTabIndex
+        potionSelectorHintLabel.isHidden = !potionsVisible
+        for chip in potionChipNodes.values {
+            chip.container.isHidden = !potionsVisible
+        }
+
         for (i, btn) in shopTabButtons.enumerated() {
             let active = i == selectedShopTab
             btn.fillColor = active ? Palette.ember : Palette.rowFill
             btn.strokeColor = active ? Palette.emberBright : Palette.panelStroke
+            btn.lineWidth = active ? 2.2 : 1.4
+            btn.glowWidth = active ? 3 : 0
             shopTabLabels[i].fontColor = active ? SKColor(red: 0.12, green: 0.03, blue: 0.02, alpha: 1) : Palette.moonlightDim
+            shopTabIconLabels[i].alpha = active ? 1.0 : 0.6
         }
     }
 
@@ -1066,11 +1594,53 @@ final class MenuScene: SKScene {
             }
             petSelectorHintLabel.alpha = 0
             petSelectorHintLabel.run(SKAction.sequence([SKAction.wait(forDuration: 0.05), SKAction.fadeIn(withDuration: 0.2)]))
+            for kind in PlayerSkinKind.allCases {
+                skinChipNodes[kind]?.container.alpha = 0
+                skinChipNodes[kind]?.container.run(SKAction.sequence([SKAction.wait(forDuration: 0.05), SKAction.fadeIn(withDuration: 0.2)]))
+            }
+            skinSelectorHintLabel.alpha = 0
+            skinSelectorHintLabel.run(SKAction.sequence([SKAction.wait(forDuration: 0.05), SKAction.fadeIn(withDuration: 0.2)]))
+            for kind in PotionKind.allCases {
+                potionChipNodes[kind]?.container.alpha = 0
+                potionChipNodes[kind]?.container.run(SKAction.sequence([SKAction.wait(forDuration: 0.05), SKAction.fadeIn(withDuration: 0.2)]))
+            }
+            potionSelectorHintLabel.alpha = 0
+            potionSelectorHintLabel.run(SKAction.sequence([SKAction.wait(forDuration: 0.05), SKAction.fadeIn(withDuration: 0.2)]))
+            resetLink.alpha = 0
+            resetLink.run(SKAction.sequence([SKAction.wait(forDuration: 0.05), SKAction.fadeIn(withDuration: 0.2)]))
         } else {
+            // Safety net: the reset-confirm modal can't normally still be open when the shop closes
+            // (topInteractiveName blocks shopClose/shopOverlay taps while it's up), but snap it shut
+            // instantly rather than animated in case some other path ever gets here with it showing.
+            if isResetConfirmOpen {
+                isResetConfirmOpen = false
+                resetConfirmModal.removeAllActions()
+                resetConfirmModal.alpha = 0
+                resetConfirmModal.isHidden = true
+            }
             let fadeOut = SKAction.fadeOut(withDuration: 0.18)
             shopOverlay.run(fadeOut)
             shopPanel.run(SKAction.group([fadeOut, SKAction.scale(to: 0.94, duration: 0.18)])) { [weak self] in
                 self?.shopLayer.isHidden = true
+            }
+        }
+    }
+
+    private func setResetConfirmOpen(_ open: Bool) {
+        guard open != isResetConfirmOpen else { return }
+        isResetConfirmOpen = open
+        AudioManager.shared.playSFX(.buttonTap)
+        if open {
+            AudioManager.shared.hapticNotification(.warning)
+            resetConfirmModal.removeAllActions()
+            resetConfirmModal.alpha = 0
+            resetConfirmModal.setScale(0.92)
+            resetConfirmModal.isHidden = false
+            resetConfirmModal.run(SKAction.group([SKAction.fadeIn(withDuration: 0.18), SKAction.scale(to: 1.0, duration: 0.2)]))
+        } else {
+            resetConfirmModal.removeAllActions()
+            resetConfirmModal.run(SKAction.group([SKAction.fadeOut(withDuration: 0.15), SKAction.scale(to: 0.94, duration: 0.15)])) { [weak self] in
+                self?.resetConfirmModal.isHidden = true
             }
         }
     }
@@ -1116,8 +1686,13 @@ final class MenuScene: SKScene {
         let hit = nodes(at: location)
         let matched = hit.filter { node in
             guard let name = node.name else { return false }
+            // The reset-confirm modal is a full-screen-blocking overlay on top of the shop panel —
+            // while it's up, nothing behind it (shop tabs, rows, close button...) is reachable.
+            if isResetConfirmOpen {
+                return name == "resetConfirmCancel" || name == "resetConfirmConfirm"
+            }
             if isShopOpen {
-                if name == "shopOverlay" || name == "shopClose" || name == "autoReviveAction" || name == "speedBoostAction" { return true }
+                if name == "shopOverlay" || name == "shopClose" || name == "autoReviveAction" || name == "speedBoostAction" || name == "resetProgressLink" { return true }
                 if name.hasPrefix("shopTab_") { return true }
                 if name.hasPrefix("buy_") {
                     // Rows from the non-selected tab still exist at overlapping positions (only one
@@ -1129,9 +1704,15 @@ final class MenuScene: SKScene {
                 if name.hasPrefix("petChip_") {
                     return selectedShopTab == Self.familiarsTabIndex
                 }
+                if name.hasPrefix("selectSkin_") {
+                    return selectedShopTab == Self.skinsTabIndex
+                }
+                if name.hasPrefix("selectPotion_") {
+                    return selectedShopTab == Self.potionsTabIndex
+                }
                 return false
             } else {
-                return name == "play" || name == "shopToggle" || name == "goldRushAction" || name == "backToCommandDeck"
+                return name == "play" || name == "shopToggle" || name == "goldRushAction"
             }
         }
         return matched.max(by: { $0.zPosition < $1.zPosition })?.name
@@ -1145,8 +1726,6 @@ final class MenuScene: SKScene {
             if pressed { JuiceEffects.pressDown(node) } else { JuiceEffects.releaseBounce(node) }
         }
         switch name {
-        case "backToCommandDeck":
-            apply(backToCommandDeckButton)
         case "play":
             apply(playButton)
         case "shopToggle":
@@ -1159,6 +1738,12 @@ final class MenuScene: SKScene {
             apply(autoReviveCard)
         case "speedBoostAction":
             apply(speedBoostCard)
+        case "resetProgressLink":
+            apply(resetLink)
+        case "resetConfirmCancel":
+            apply(resetConfirmCancelButton)
+        case "resetConfirmConfirm":
+            apply(resetConfirmConfirmButton)
         default:
             if name.hasPrefix("buy_") {
                 let kindRaw = String(name.dropFirst("buy_".count))
@@ -1174,15 +1759,22 @@ final class MenuScene: SKScene {
                 if let kind = PetKind(rawValue: kindRaw), let chip = petChipNodes[kind]?.container {
                     apply(chip)
                 }
+            } else if name.hasPrefix("selectSkin_") {
+                let kindRaw = String(name.dropFirst("selectSkin_".count))
+                if let kind = PlayerSkinKind(rawValue: kindRaw), let chip = skinChipNodes[kind]?.container {
+                    apply(chip)
+                }
+            } else if name.hasPrefix("selectPotion_") {
+                let kindRaw = String(name.dropFirst("selectPotion_".count))
+                if let kind = PotionKind(rawValue: kindRaw), let chip = potionChipNodes[kind]?.container {
+                    apply(chip)
+                }
             }
         }
     }
 
     private func handleTap(name: String) {
         switch name {
-        case "backToCommandDeck":
-            AudioManager.shared.playSFX(.buttonTap)
-            view?.presentScene(CommandDeckScene.newScene(), transition: .reveal(with: .up, duration: 0.45))
         case "play":
             AudioManager.shared.playSFX(.buttonTap)
             AudioManager.shared.hapticImpact(.medium)
@@ -1199,6 +1791,21 @@ final class MenuScene: SKScene {
             handleAutoReviveTap()
         case "speedBoostAction":
             handleSpeedBoostTap()
+        case "resetProgressLink":
+            setResetConfirmOpen(true)
+        case "resetConfirmCancel":
+            setResetConfirmOpen(false)
+        case "resetConfirmConfirm":
+            // Re-entrancy guard mirroring LevelUpOverlay.dismiss's hasDismissed pattern (and
+            // GameScene.selectUpgrade's early levelUpOverlay = nil): flip the "confirm is live"
+            // state to false synchronously, before performing the irreversible action, so this
+            // can't fire resetAll() twice — instead of relying solely on topInteractiveName's
+            // isResetConfirmOpen gate at the call site.
+            guard isResetConfirmOpen else { return }
+            AudioManager.shared.hapticNotification(.warning)
+            setResetConfirmOpen(false)
+            MetaProgressionStore.shared.resetAll()
+            refreshStats()
         default:
             if name.hasPrefix("buy_") {
                 let kindRaw = String(name.dropFirst("buy_".count))
@@ -1213,6 +1820,16 @@ final class MenuScene: SKScene {
                 let kindRaw = String(name.dropFirst("petChip_".count))
                 if let kind = PetKind(rawValue: kindRaw) {
                     handlePetChipTap(kind)
+                }
+            } else if name.hasPrefix("selectSkin_") {
+                let kindRaw = String(name.dropFirst("selectSkin_".count))
+                if let kind = PlayerSkinKind(rawValue: kindRaw) {
+                    handleSkinChipTap(kind)
+                }
+            } else if name.hasPrefix("selectPotion_") {
+                let kindRaw = String(name.dropFirst("selectPotion_".count))
+                if let kind = PotionKind(rawValue: kindRaw) {
+                    handlePotionChipTap(kind)
                 }
             }
         }
@@ -1234,6 +1851,20 @@ final class MenuScene: SKScene {
             }
             petSelectorHintLabel.alpha = 0
             petSelectorHintLabel.run(SKAction.fadeIn(withDuration: 0.15))
+        } else if selectedShopTab == Self.skinsTabIndex {
+            for kind in PlayerSkinKind.allCases {
+                skinChipNodes[kind]?.container.alpha = 0
+                skinChipNodes[kind]?.container.run(SKAction.fadeIn(withDuration: 0.15))
+            }
+            skinSelectorHintLabel.alpha = 0
+            skinSelectorHintLabel.run(SKAction.fadeIn(withDuration: 0.15))
+        } else if selectedShopTab == Self.potionsTabIndex {
+            for kind in PotionKind.allCases {
+                potionChipNodes[kind]?.container.alpha = 0
+                potionChipNodes[kind]?.container.run(SKAction.fadeIn(withDuration: 0.15))
+            }
+            potionSelectorHintLabel.alpha = 0
+            potionSelectorHintLabel.run(SKAction.fadeIn(withDuration: 0.15))
         }
     }
 
@@ -1257,6 +1888,47 @@ final class MenuScene: SKScene {
         store.setActivePetKinds(active)
         AudioManager.shared.hapticImpact(.light)
         refreshPetChips()
+    }
+
+    /// Single-select equip: locked (unowned) skins are a preview-only tap-no-op; owned skins simply
+    /// become the new selection, deselecting whatever was equipped before (MetaProgressionStore.
+    /// selectedSkin is a single value, not a list).
+    private func handleSkinChipTap(_ kind: PlayerSkinKind) {
+        let store = MetaProgressionStore.shared
+        guard store.isSkinOwned(kind) else {
+            AudioManager.shared.hapticImpact(.soft)
+            return
+        }
+        guard store.selectedSkin != kind else { return }
+        AudioManager.shared.playSFX(.buttonTap)
+        store.selectedSkin = kind
+        AudioManager.shared.hapticImpact(.light)
+        refreshSkinChips()
+    }
+
+    /// Toggles `kind` in/out of the starting-potion selection. No-ops (soft haptic only) for instant
+    /// kinds (voidMagnet/risingMoon — never eligible, see MetaProgressionStore.selectedStartingPotions'
+    /// doc comment) and while no Potion Mastery tier has been purchased yet (0 slots). Respects the
+    /// slot cap by evicting the oldest-selected potion, same rotation as handlePetChipTap above.
+    private func handlePotionChipTap(_ kind: PotionKind) {
+        let store = MetaProgressionStore.shared
+        guard !kind.isInstant, store.startingPotionSlots > 0 else {
+            AudioManager.shared.hapticImpact(.soft)
+            return
+        }
+        AudioManager.shared.playSFX(.buttonTap)
+        var selected = store.selectedStartingPotions()
+        if let idx = selected.firstIndex(of: kind) {
+            selected.remove(at: idx)
+        } else {
+            selected.append(kind)
+            while selected.count > store.startingPotionSlots {
+                selected.removeFirst()
+            }
+        }
+        store.setSelectedStartingPotions(selected)
+        AudioManager.shared.hapticImpact(.light)
+        refreshPotionChips()
     }
 
     private func handleBuy(kind: MetaUpgradeKind) {
@@ -1310,6 +1982,107 @@ final class MenuScene: SKScene {
                                    width: biteDiameter, height: biteDiameter)
             ctx.fillEllipse(in: biteRect)
             ctx.setBlendMode(.normal)
+        }
+    }
+
+    /// Like gradientTexture above but with real alpha transparency (that one hardcodes `opaque: true`,
+    /// which would bake translucent colors onto an opaque backing instead of actually blending) — used
+    /// for the subtle "glassy" sheen overlay on every shop row card.
+    private static func alphaGradientTexture(topAlpha: CGFloat, bottomAlpha: CGFloat, size: CGSize) -> SKTexture {
+        ProceduralTextures.render(size: size, opaque: false) { ctx, size in
+            let colors = [SKColor(white: 1, alpha: topAlpha).cgColor, SKColor(white: 1, alpha: bottomAlpha).cgColor] as CFArray
+            guard let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 1]) else { return }
+            ctx.drawLinearGradient(gradient, start: CGPoint(x: 0, y: 0), end: CGPoint(x: 0, y: size.height), options: [])
+        }
+    }
+
+    private struct SkinSwatchPalette {
+        let cloak: SKColor
+        let trim: SKColor
+        let core: SKColor
+    }
+
+    /// Mirrors PlayerController's private `palette(for:)` RGB values exactly, so the shop's preview
+    /// swatch actually matches what the skin looks like in-game. PlayerController's copy is private
+    /// (by design — it's an implementation detail of the player sprite), so this is a manually
+    /// synced duplicate rather than a shared call; if PlayerController's palette ever changes, this
+    /// one needs to change with it.
+    private static func skinSwatchPalette(for kind: PlayerSkinKind) -> SkinSwatchPalette {
+        switch kind {
+        case .nightCloak:
+            return SkinSwatchPalette(cloak: SKColor(red: 0.16, green: 0.08, blue: 0.24, alpha: 1),
+                                      trim: SKColor(red: 0.78, green: 0.1, blue: 0.16, alpha: 0.85),
+                                      core: SKColor(red: 1.0, green: 0.5, blue: 0.2, alpha: 0.9))
+        case .crimsonFang:
+            return SkinSwatchPalette(cloak: SKColor(red: 0.06, green: 0.02, blue: 0.03, alpha: 1),
+                                      trim: SKColor(red: 0.85, green: 0.08, blue: 0.14, alpha: 0.95),
+                                      core: SKColor(red: 1.0, green: 0.8, blue: 0.25, alpha: 0.95))
+        case .moonlitVeil:
+            return SkinSwatchPalette(cloak: SKColor(red: 0.62, green: 0.63, blue: 0.72, alpha: 1),
+                                      trim: SKColor(red: 0.35, green: 0.85, blue: 0.95, alpha: 0.9),
+                                      core: SKColor(red: 0.9, green: 0.98, blue: 1.0, alpha: 0.95))
+        case .voidReaper:
+            return SkinSwatchPalette(cloak: SKColor(red: 0.03, green: 0.02, blue: 0.05, alpha: 1),
+                                      trim: SKColor(red: 0.55, green: 0.2, blue: 0.85, alpha: 0.9),
+                                      core: SKColor(red: 0.65, green: 0.25, blue: 0.95, alpha: 0.95))
+        case .emberSovereign:
+            return SkinSwatchPalette(cloak: SKColor(red: 0.32, green: 0.2, blue: 0.04, alpha: 1),
+                                      trim: SKColor(red: 1.0, green: 0.95, blue: 0.75, alpha: 0.95),
+                                      core: SKColor(red: 1.0, green: 0.98, blue: 0.9, alpha: 1))
+        }
+    }
+
+    /// Small circular preview badge: cloak-colored fill, trim-colored ring, a soft core-colored glow
+    /// at the center — a simplified stand-in for the full hooded silhouette PlayerController draws,
+    /// using the exact same three colors so the shop preview reads as "the same look".
+    private static func skinSwatchTexture(cloak: SKColor, trim: SKColor, core: SKColor, diameter: CGFloat) -> SKTexture {
+        let size = CGSize(width: diameter, height: diameter)
+        return ProceduralTextures.render(size: size) { ctx, size in
+            let rect = CGRect(origin: .zero, size: size).insetBy(dx: 2, dy: 2)
+            ctx.setFillColor(cloak.cgColor)
+            ctx.fillEllipse(in: rect)
+            ctx.setStrokeColor(trim.cgColor)
+            ctx.setLineWidth(2.4)
+            ctx.strokeEllipse(in: rect.insetBy(dx: 1, dy: 1))
+
+            let coreCenter = CGPoint(x: rect.midX, y: rect.midY)
+            let coreRadius = size.width * 0.16
+            let glowColors = [core.withAlphaComponent(0.85).cgColor, core.withAlphaComponent(0).cgColor] as CFArray
+            if let glow = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: glowColors, locations: [0, 1]) {
+                ctx.drawRadialGradient(glow, startCenter: coreCenter, startRadius: 0, endCenter: coreCenter, endRadius: coreRadius * 2.2, options: [])
+            }
+            ctx.setFillColor(core.cgColor)
+            ctx.fillEllipse(in: CGRect(x: coreCenter.x - coreRadius / 2, y: coreCenter.y - coreRadius / 2, width: coreRadius, height: coreRadius))
+        }
+    }
+
+    /// Small vial glyph tinted by a single color — deliberately reuses only `Potion.accentColor(for:)`
+    /// (the same per-kind color already established for in-run pickups) rather than inventing a new
+    /// palette, so the shop's starting-potion picker stays visually consistent with what you find
+    /// mid-run.
+    private static func potionIconTexture(color: SKColor, diameter: CGFloat) -> SKTexture {
+        let size = CGSize(width: diameter, height: diameter)
+        return ProceduralTextures.render(size: size) { ctx, size in
+            let center = CGPoint(x: size.width / 2, y: size.height / 2)
+            let glowColors = [color.withAlphaComponent(0.55).cgColor, color.withAlphaComponent(0).cgColor] as CFArray
+            if let glow = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: glowColors, locations: [0, 1]) {
+                ctx.drawRadialGradient(glow, startCenter: center, startRadius: 0, endCenter: center, endRadius: size.width * 0.48, options: [])
+            }
+            let bulbRect = CGRect(x: center.x - size.width * 0.20, y: center.y - size.height * 0.30,
+                                   width: size.width * 0.40, height: size.height * 0.46)
+            ctx.setFillColor(color.withAlphaComponent(0.92).cgColor)
+            ctx.fillEllipse(in: bulbRect)
+            ctx.setStrokeColor(color.cgColor)
+            ctx.setLineWidth(1.4)
+            ctx.strokeEllipse(in: bulbRect)
+
+            let neckRect = CGRect(x: center.x - size.width * 0.07, y: bulbRect.maxY - 1,
+                                   width: size.width * 0.14, height: size.height * 0.16)
+            ctx.setFillColor(SKColor(white: 0.85, alpha: 0.9).cgColor)
+            ctx.fill(neckRect)
+            ctx.setStrokeColor(color.cgColor)
+            ctx.setLineWidth(1.0)
+            ctx.stroke(neckRect)
         }
     }
 

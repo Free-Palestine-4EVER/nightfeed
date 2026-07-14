@@ -244,4 +244,68 @@ final class MetaProgressionStore {
     func setActivePetKinds(_ kinds: [PetKind]) {
         defaults.set(kinds.map { $0.rawValue }, forKey: PetKey.activePets)
     }
+
+    // MARK: - Skins
+
+    private enum SkinKey {
+        static let selectedSkin = "nightfeed.selectedSkin"
+    }
+
+    func isSkinOwned(_ kind: PlayerSkinKind) -> Bool {
+        switch kind {
+        case .nightCloak: return true
+        case .crimsonFang: return tier(for: .skinCrimsonFang) > 0
+        case .moonlitVeil: return tier(for: .skinMoonlitVeil) > 0
+        case .voidReaper: return tier(for: .skinVoidReaper) > 0
+        case .emberSovereign: return tier(for: .skinEmberSovereign) > 0
+        }
+    }
+
+    /// Falls back to the free default if the saved selection references a skin that's no longer owned.
+    var selectedSkin: PlayerSkinKind {
+        get {
+            let raw = defaults.string(forKey: SkinKey.selectedSkin) ?? PlayerSkinKind.nightCloak.rawValue
+            let kind = PlayerSkinKind(rawValue: raw) ?? .nightCloak
+            return isSkinOwned(kind) ? kind : .nightCloak
+        }
+        set {
+            guard isSkinOwned(newValue) else { return }
+            defaults.set(newValue.rawValue, forKey: SkinKey.selectedSkin)
+        }
+    }
+
+    // MARK: - Starting potions ("Potion Mastery" meta upgrade)
+
+    private enum PotionKey {
+        static let startingPotions = "nightfeed.startingPotions"
+    }
+
+    var startingPotionSlots: Int { tier(for: .potionMastery) }
+
+    /// Which potion kinds actually start pre-applied each run — capped by startingPotionSlots.
+    /// Instant kinds (voidMagnet/risingMoon) are excluded: "start the run with a free level-up
+    /// already applied" isn't a coherent starting-buff choice the way a timed buff is.
+    func selectedStartingPotions() -> [PotionKind] {
+        let saved = (defaults.array(forKey: PotionKey.startingPotions) as? [String] ?? [])
+            .compactMap { PotionKind(rawValue: $0) }
+            .filter { !$0.isInstant }
+        return Array(saved.prefix(startingPotionSlots))
+    }
+
+    func setSelectedStartingPotions(_ kinds: [PotionKind]) {
+        let capped = Array(kinds.filter { !$0.isInstant }.prefix(startingPotionSlots))
+        defaults.set(capped.map { $0.rawValue }, forKey: PotionKey.startingPotions)
+    }
+
+    // MARK: - Reset
+
+    /// Wipes ALL NightFeed progress — gold, every meta upgrade tier, best time, run count, gold rush/
+    /// auto-revive/speed-boost state, and skin/pet/potion selections. Irreversible — the caller
+    /// (MenuScene) is responsible for a confirmation step before calling this.
+    func resetAll() {
+        let all = defaults.dictionaryRepresentation()
+        for key in all.keys where key.hasPrefix("nightfeed.") {
+            defaults.removeObject(forKey: key)
+        }
+    }
 }

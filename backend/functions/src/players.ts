@@ -1,5 +1,4 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { beforeUserCreated } from "firebase-functions/v2/identity";
 import { getFirestore } from "firebase-admin/firestore";
 import { DroneKind, PlayerDoc, DRONE_KINDS } from "./types";
 
@@ -29,23 +28,11 @@ function defaultPlayerDoc(uid: string, displayName: string): PlayerDoc {
 }
 
 /**
- * Fires on Firebase Auth account creation (anonymous or Sign in with Apple) — seeds the player's
- * Firestore profile with defaults so every other function can assume a players/{uid} doc exists.
- */
-export const onPlayerCreated = beforeUserCreated(async (event) => {
-  const uid = event.data?.uid;
-  if (!uid) return;
-  const db = getFirestore();
-  const ref = db.collection("players").doc(uid);
-  const existing = await ref.get();
-  if (existing.exists) return;
-  await ref.set(defaultPlayerDoc(uid, "Captain"));
-});
-
-/**
- * Callable fallback: if a client somehow reaches the app before onPlayerCreated has propagated (or
- * during local emulator testing where auth triggers can lag), this lets the client explicitly ensure
- * its own profile exists. Idempotent — a no-op if the doc is already there.
+ * Ensures the caller's Firestore profile exists, creating it with defaults on first call. Called by
+ * FirebaseManager.swift right after every sign-in (not just the first one — idempotent, a no-op once
+ * the doc exists). Deliberately a plain callable rather than a beforeUserCreated blocking trigger:
+ * blocking triggers need Identity Platform explicitly configured in the Firebase console, which is an
+ * extra manual step this doesn't need — a callable works immediately on any project with Auth enabled.
  */
 export const ensurePlayerProfile = onCall(async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Sign-in required.");

@@ -149,6 +149,11 @@ final class GameScene: SKScene {
         // "Undying Oath" meta upgrade: free automatic revives this run.
         freeRevivesRemaining = MetaProgressionStore.shared.tier(for: .reviveCharge)
 
+        // "Potion Mastery" meta upgrade: chosen potion buffs already active from the first frame.
+        for kind in MetaProgressionStore.shared.selectedStartingPotions() {
+            player.applyPotionBuff(kind, now: 0)
+        }
+
         // Familiars: whichever pet(s) are owned + currently selected (1 normally, 2 with the "Second
         // Familiar" meta upgrade) join the run — see MetaProgressionStore.activePetKinds().
         for (index, kind) in MetaProgressionStore.shared.activePetKinds().enumerated() {

@@ -194,6 +194,37 @@ enum PotionKind: String, CaseIterable, Codable {
     }
 }
 
+/// Cosmetic player recolors, unlockable via the shop (see MetaUpgradeKind's `skin*` cases). Purely
+/// visual — PlayerController maps each case to a distinct color scheme for the same silhouette, no
+/// stat difference between skins. `nightCloak` is the free default, always owned.
+enum PlayerSkinKind: String, CaseIterable, Codable {
+    case nightCloak      // default: deep violet cloak, blood-red trim, ember core
+    case crimsonFang     // black cloak, blood-red trim, gold core
+    case moonlitVeil     // pale silver cloak, cyan trim, white core
+    case voidReaper      // near-black cloak, violet-glow trim, void-purple core
+    case emberSovereign  // dark gold cloak, white-hot trim, white core
+
+    var displayName: String {
+        switch self {
+        case .nightCloak: return "Night Cloak"
+        case .crimsonFang: return "Crimson Fang"
+        case .moonlitVeil: return "Moonlit Veil"
+        case .voidReaper: return "Void Reaper"
+        case .emberSovereign: return "Ember Sovereign"
+        }
+    }
+
+    var flavorText: String {
+        switch self {
+        case .nightCloak: return "The look you started with. Reliable."
+        case .crimsonFang: return "Black as the grave, trimmed in fresh blood."
+        case .moonlitVeil: return "Pale as moonlight, cold as the void between stars."
+        case .voidReaper: return "Barely visible in the dark — a shadow given hunger."
+        case .emberSovereign: return "Gold and white-hot, like the last ember before dawn."
+        }
+    }
+}
+
 /// The pet familiars unlockable via the shop (see MetaUpgradeKind's `pet*` cases). GameScene reads
 /// `MetaProgressionStore.activePetKinds` to decide which PetCompanion node(s) to spawn each run.
 enum PetKind: String, CaseIterable, Codable {
@@ -255,6 +286,11 @@ enum MetaUpgradeKind: String, CaseIterable, Codable {
     case reviveCharge
     case weaponMastery
     case extraChoices
+    case potionMastery
+    case skinCrimsonFang
+    case skinMoonlitVeil
+    case skinVoidReaper
+    case skinEmberSovereign
 
     var displayName: String {
         switch self {
@@ -278,6 +314,11 @@ enum MetaUpgradeKind: String, CaseIterable, Codable {
         case .reviveCharge: return "Undying Oath"
         case .weaponMastery: return "First Strike"
         case .extraChoices: return "Third Eye"
+        case .potionMastery: return "Potion Mastery"
+        case .skinCrimsonFang: return "Crimson Fang Skin"
+        case .skinMoonlitVeil: return "Moonlit Veil Skin"
+        case .skinVoidReaper: return "Void Reaper Skin"
+        case .skinEmberSovereign: return "Ember Sovereign Skin"
         }
     }
 
@@ -303,6 +344,11 @@ enum MetaUpgradeKind: String, CaseIterable, Codable {
         case .reviveCharge: return "+1 free automatic revive per run, per tier — no ad needed."
         case .weaponMastery: return "Your first weapon each run starts two levels ahead."
         case .extraChoices: return "+1 upgrade choice offered on every level-up, per tier."
+        case .potionMastery: return "+1 starting potion slot per tier — begin every run with a vial already active."
+        case .skinCrimsonFang: return "Unlocks the Crimson Fang look."
+        case .skinMoonlitVeil: return "Unlocks the Moonlit Veil look."
+        case .skinVoidReaper: return "Unlocks the Void Reaper look."
+        case .skinEmberSovereign: return "Unlocks the Ember Sovereign look."
         }
     }
 
@@ -320,6 +366,8 @@ enum MetaUpgradeKind: String, CaseIterable, Codable {
         case .reviveCharge: return 2
         case .weaponMastery: return 1
         case .extraChoices: return 2
+        case .potionMastery: return 3
+        case .skinCrimsonFang, .skinMoonlitVeil, .skinVoidReaper, .skinEmberSovereign: return 1
         }
     }
 
@@ -347,6 +395,11 @@ enum MetaUpgradeKind: String, CaseIterable, Codable {
         case .reviveCharge: base = 250
         case .weaponMastery: base = 180
         case .extraChoices: base = 220
+        case .potionMastery: base = 160
+        case .skinCrimsonFang: base = 320
+        case .skinMoonlitVeil: base = 380
+        case .skinVoidReaper: base = 450
+        case .skinEmberSovereign: base = 550
         }
         return Int(Double(base) * pow(1.6, Double(tier - 1)))
     }

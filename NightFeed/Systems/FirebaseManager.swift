@@ -123,8 +123,15 @@ enum FirebaseManagerError: Error, LocalizedError {
     }
 }
 
-// NOTE: `ListingSnapshot` (the client-side mirror of the backend's ListingDoc) is declared once, at
-// file scope, in Scenes/MarketplaceScene.swift — it must NOT be redeclared here. Two concurrent
-// agents each independently defined this struct, which is an "invalid redeclaration" compile error;
-// this file now just uses the definition MarketplaceScene.swift already owns (same module, no import
-// needed).
+/// Client-side mirror of the backend's ListingDoc (backend/functions/src/types.ts). The marketplace
+/// UI that consumed this was removed along with Command Deck, but the backend/listener code stays —
+/// kept self-contained here in case that UI comes back.
+struct ListingSnapshot: Identifiable {
+    let id: String
+    let sellerUid: String
+    let droneKind: String
+    let droneLevel: Int
+    let priceCrystals: Int
+    let status: String
+    let isMine: Bool
+}

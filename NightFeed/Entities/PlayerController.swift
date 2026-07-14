@@ -80,7 +80,7 @@ final class PlayerController: SKSpriteNode {
             SKAction.scale(to: 0.94, duration: 1.1)
         ])))
 
-        let body = SKSpriteNode(texture: PlayerController.proceduralBodyTexture(), size: size)
+        let body = SKSpriteNode(texture: PlayerController.proceduralBodyTexture(skin: MetaProgressionStore.shared.selectedSkin), size: size)
         body.zPosition = 1
         player.addChild(body)
         player.bodySprite = body
@@ -114,9 +114,49 @@ final class PlayerController: SKSpriteNode {
         return player
     }
 
-    /// Cloaked, ember-eyed humanoid silhouette: deep violet cloak, moonlight-white highlights, blood-red trim.
-    private static func proceduralBodyTexture() -> SKTexture {
-        ProceduralTextures.render(size: CGSize(width: 88, height: 88)) { ctx, size in
+    /// Per-skin color scheme — same silhouette for every skin (cloak/hood/core shape never changes),
+    /// only the palette does. Purely cosmetic, no gameplay difference between skins.
+    private struct SkinPalette {
+        let cloak: SKColor
+        let trim: SKColor
+        let hood: SKColor
+        let core: SKColor
+    }
+
+    private static func palette(for skin: PlayerSkinKind) -> SkinPalette {
+        switch skin {
+        case .nightCloak:
+            return SkinPalette(cloak: SKColor(red: 0.16, green: 0.08, blue: 0.24, alpha: 1),
+                                trim: SKColor(red: 0.78, green: 0.1, blue: 0.16, alpha: 0.85),
+                                hood: SKColor(red: 0.1, green: 0.05, blue: 0.15, alpha: 1),
+                                core: SKColor(red: 1.0, green: 0.5, blue: 0.2, alpha: 0.9))
+        case .crimsonFang:
+            return SkinPalette(cloak: SKColor(red: 0.06, green: 0.02, blue: 0.03, alpha: 1),
+                                trim: SKColor(red: 0.85, green: 0.08, blue: 0.14, alpha: 0.95),
+                                hood: SKColor(red: 0.04, green: 0.01, blue: 0.02, alpha: 1),
+                                core: SKColor(red: 1.0, green: 0.8, blue: 0.25, alpha: 0.95))
+        case .moonlitVeil:
+            return SkinPalette(cloak: SKColor(red: 0.62, green: 0.63, blue: 0.72, alpha: 1),
+                                trim: SKColor(red: 0.35, green: 0.85, blue: 0.95, alpha: 0.9),
+                                hood: SKColor(red: 0.45, green: 0.46, blue: 0.55, alpha: 1),
+                                core: SKColor(red: 0.9, green: 0.98, blue: 1.0, alpha: 0.95))
+        case .voidReaper:
+            return SkinPalette(cloak: SKColor(red: 0.03, green: 0.02, blue: 0.05, alpha: 1),
+                                trim: SKColor(red: 0.55, green: 0.2, blue: 0.85, alpha: 0.9),
+                                hood: SKColor(red: 0.02, green: 0.01, blue: 0.03, alpha: 1),
+                                core: SKColor(red: 0.65, green: 0.25, blue: 0.95, alpha: 0.95))
+        case .emberSovereign:
+            return SkinPalette(cloak: SKColor(red: 0.32, green: 0.2, blue: 0.04, alpha: 1),
+                                trim: SKColor(red: 1.0, green: 0.95, blue: 0.75, alpha: 0.95),
+                                hood: SKColor(red: 0.22, green: 0.13, blue: 0.02, alpha: 1),
+                                core: SKColor(red: 1.0, green: 0.98, blue: 0.9, alpha: 1))
+        }
+    }
+
+    /// Cloaked, ember-eyed humanoid silhouette — same shape for every skin, palette varies (see SkinPalette).
+    private static func proceduralBodyTexture(skin: PlayerSkinKind) -> SKTexture {
+        let colors = palette(for: skin)
+        return ProceduralTextures.render(size: CGSize(width: 88, height: 88)) { ctx, size in
             let cx = size.width / 2
             let cy = size.height / 2
 
@@ -135,26 +175,26 @@ final class PlayerController: SKSpriteNode {
                                 control: CGPoint(x: cx - 26, y: cy + 4))
             cloak.closeSubpath()
 
-            ctx.setFillColor(SKColor(red: 0.16, green: 0.08, blue: 0.24, alpha: 1).cgColor)
+            ctx.setFillColor(colors.cloak.cgColor)
             ctx.addPath(cloak)
             ctx.fillPath()
 
-            ctx.setStrokeColor(SKColor(red: 0.78, green: 0.1, blue: 0.16, alpha: 0.85).cgColor)
+            ctx.setStrokeColor(colors.trim.cgColor)
             ctx.setLineWidth(2.4)
             ctx.addPath(cloak)
             ctx.strokePath()
 
-            // Hood/head, moonlight-pale hint of a face lost in shadow.
+            // Hood/head, pale hint of a face lost in shadow.
             let hoodRect = CGRect(x: cx - 15, y: size.height - 34, width: 30, height: 28)
-            ctx.setFillColor(SKColor(red: 0.1, green: 0.05, blue: 0.15, alpha: 1).cgColor)
+            ctx.setFillColor(colors.hood.cgColor)
             ctx.fillEllipse(in: hoodRect)
 
             let faceRect = CGRect(x: cx - 9, y: size.height - 26, width: 18, height: 15)
             ctx.setFillColor(SKColor(red: 0.86, green: 0.83, blue: 0.9, alpha: 0.35).cgColor)
             ctx.fillEllipse(in: faceRect)
 
-            // Ember core glowing through the chest, the "feeds on night" motif.
-            ctx.setFillColor(SKColor(red: 1.0, green: 0.5, blue: 0.2, alpha: 0.9).cgColor)
+            // Core glowing through the chest, the "feeds on night" motif.
+            ctx.setFillColor(colors.core.cgColor)
             ctx.fillEllipse(in: CGRect(x: cx - 5, y: cy - 4, width: 10, height: 10))
         }
     }
