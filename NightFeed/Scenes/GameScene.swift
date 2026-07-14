@@ -66,6 +66,7 @@ final class GameScene: SKScene {
     /// hosting SKView (see GameRootView), so at most one physical touch can ever exist — this flag,
     /// not UITouch object identity, is the single source of truth for joystick ownership.
     private var isJoystickTracking = false
+    private var joystickHeartbeatNextLogTime: TimeInterval = 0 // TEMPORARY diagnostic
     private var hasBuiltHUD = false
     /// When any modal overlay first became active, for the recovery watchdog below. nil whenever none is showing.
     private var modalStuckSince: TimeInterval?
@@ -88,6 +89,7 @@ final class GameScene: SKScene {
     private var timerLabel: SKLabelNode!
     private var killLabel: SKLabelNode!
     private var pauseButton: SKShapeNode!
+    private var cheatLevelUpButton: SKShapeNode!
 
     private static let healthBarWidth: CGFloat = 190
     private static let xpBarWidth: CGFloat = 240
@@ -296,8 +298,23 @@ final class GameScene: SKScene {
         // Should be unreachable given how beginDrag()/endDrag() are called below, but costs nothing
         // to guarantee instead of assume.
         if isJoystickTracking != joystick.isDragging {
+            print("[JOY] SELF-HEAL MISMATCH FIRED at t=\(currentTime): isJoystickTracking=\(isJoystickTracking) joystick.isDragging=\(joystick.isDragging)")
             joystick.endDrag()
             isJoystickTracking = false
+        }
+
+        // TEMPORARY diagnostic heartbeat (see also the [JOY] logs in touchesBegan/Moved/Ended/Cancelled)
+        // — logs once every ~3s while the joystick believes it's being dragged, so a stuck-forever case
+        // (isJoystickTracking stays true with no touchesEnded/Cancelled ever following) is visible in
+        // the device console even without a mismatch ever occurring.
+        if isJoystickTracking {
+            if joystickHeartbeatNextLogTime == 0 { joystickHeartbeatNextLogTime = currentTime }
+            if currentTime >= joystickHeartbeatNextLogTime {
+                print("[JOY] HEARTBEAT still tracking at t=\(currentTime), currentVector=\(joystick.currentVector)")
+                joystickHeartbeatNextLogTime = currentTime + 3.0
+            }
+        } else {
+            joystickHeartbeatNextLogTime = 0
         }
 
         // Hard watchdog, layered on top of the check above: covers a desync that check can't see (the
@@ -425,6 +442,23 @@ final class GameScene: SKScene {
         bar2.position = CGPoint(x: 4, y: 0)
         pauseButton.addChild(bar2)
         hudLayer.addChild(pauseButton)
+
+        // Testing cheat: instantly grants a level (bypasses XP entirely) — small, out of the way,
+        // just left of the pause button.
+        let cheat = SKShapeNode(circleOfRadius: 16)
+        cheat.name = "cheatLevelUp"
+        cheat.fillColor = SKColor(red: 0.15, green: 0.5, blue: 0.25, alpha: 0.55)
+        cheat.strokeColor = SKColor(red: 0.4, green: 0.9, blue: 0.5, alpha: 0.8)
+        cheat.lineWidth = 1.5
+        let cheatLabel = SKLabelNode(text: "⬆")
+        cheatLabel.name = "cheatLevelUp"
+        cheatLabel.fontName = "AvenirNext-Bold"
+        cheatLabel.fontSize = 16
+        cheatLabel.fontColor = .white
+        cheatLabel.verticalAlignmentMode = .center
+        cheat.addChild(cheatLabel)
+        hudLayer.addChild(cheat)
+        cheatLevelUpButton = cheat
     }
 
     private func layoutHUD(size: CGSize) {
@@ -437,6 +471,7 @@ final class GameScene: SKScene {
         xpTrack.position = CGPoint(x: 0, y: topRow)
         levelBadge.position = CGPoint(x: -Self.xpBarWidth / 2 - 24, y: topRow)
         pauseButton.position = CGPoint(x: size.width / 2 - 32, y: topRow)
+        cheatLevelUpButton.position = CGPoint(x: size.width / 2 - 76, y: topRow)
 
         healthTrack.position = CGPoint(x: -size.width / 2 + Self.healthBarWidth / 2 + 20, y: healthRow)
         healthLabel.position = .zero
@@ -588,18 +623,20 @@ final class GameScene: SKScene {
         AudioManager.shared.hapticImpact(.medium)
     }
 
-    private func selectUpgrade(index: Int) {
-        guard isShowingUpgradeOverlay, let overlay = levelUpOverlay, index >= 0, index < pendingUpgradeChoices.count else { return }
-        let choice = pendingUpgradeChoices[index]
+    /// Guards against a fast double-tap re-entering selectUpgrade during the ~0.16s dismiss fade.
+    /// Deliberately NOT the same signal as the update()-loop self-heal above (which watches
+    /// `levelUpOverlay?.parent == nil` to detect a genuinely stuck modal) — an earlier version of this
+    /// fix nil'd `levelUpOverlay` immediately here to block re-entry, which made every single normal,
+    /// successful dismiss look "stuck" to that self-heal for the ~0.16s the fade was still playing,
+    /// causing it to fire on every upgrade pick and yank isShowingUpgradeOverlay false mid-animation.
+    /// This flag keeps double-tap protection and stuck-modal detection fully independent.
+    private var isResolvingUpgradeSelection = false
 
-        // Clear the "there's a live overlay to tap" state immediately, before the dismiss animation
-        // even starts. A fast double-tap on a card (or a second card) landing during the ~0.16s fade
-        // used to re-enter this method — levelUpOverlay being nil now makes the guard above reject
-        // that re-entry outright, instead of double-applying the choice and double-firing the
-        // completion closure below (which was desyncing isShowingUpgradeOverlay from reality and
-        // silently swallowing all further input, joystick included).
-        levelUpOverlay = nil
-        pendingUpgradeChoices = []
+    private func selectUpgrade(index: Int) {
+        guard isShowingUpgradeOverlay, !isResolvingUpgradeSelection, let overlay = levelUpOverlay,
+              index >= 0, index < pendingUpgradeChoices.count else { return }
+        let choice = pendingUpgradeChoices[index]
+        isResolvingUpgradeSelection = true
 
         overlay.flashSelected(index: index)
         upgradeManager.apply(choice)
@@ -608,8 +645,24 @@ final class GameScene: SKScene {
         overlay.dismiss { [weak self] in
             guard let self else { return }
             self.isShowingUpgradeOverlay = false
+            self.levelUpOverlay = nil
+            self.pendingUpgradeChoices = []
+            self.isResolvingUpgradeSelection = false
             self.presentNextQueuedUpgradeIfNeeded()
         }
+    }
+
+    /// "Shuffle" — re-rolls the current card set without consuming a level-up or touching
+    /// isShowingUpgradeOverlay/queuedLevelUps at all; the overlay stays open, just with fresh choices.
+    private func rerollUpgradeChoices() {
+        guard isShowingUpgradeOverlay, !isResolvingUpgradeSelection, let overlay = levelUpOverlay else { return }
+        let choiceCount = max(3, pendingUpgradeChoices.count)
+        let choices = upgradeManager.rollChoices(count: choiceCount)
+        guard !choices.isEmpty else { return }
+        pendingUpgradeChoices = choices
+        overlay.reroll(choices: choices)
+        AudioManager.shared.playSFX(.buttonTap)
+        AudioManager.shared.hapticImpact(.light)
     }
 
     // MARK: - Death / revive / game over
@@ -918,9 +971,12 @@ final class GameScene: SKScene {
         let location = touch.location(in: self)
 
         if isShowingUpgradeOverlay {
-            if let name = tappedName(at: location, in: overlayLayer), name.hasPrefix("upgradeCard_"),
-               let index = Int(name.dropFirst("upgradeCard_".count)) {
-                selectUpgrade(index: index)
+            if let name = tappedName(at: location, in: overlayLayer) {
+                if name.hasPrefix("upgradeCard_"), let index = Int(name.dropFirst("upgradeCard_".count)) {
+                    selectUpgrade(index: index)
+                } else if name == "levelUpShuffle" {
+                    rerollUpgradeChoices()
+                }
             }
             return
         }
@@ -949,32 +1005,51 @@ final class GameScene: SKScene {
             return
         }
 
-        if let name = tappedName(at: location, in: hudLayer), name == "pauseButton" {
-            togglePauseMenu()
-            return
+        if let name = tappedName(at: location, in: hudLayer) {
+            if name == "pauseButton" {
+                togglePauseMenu()
+                return
+            } else if name == "cheatLevelUp" {
+                AudioManager.shared.playSFX(.buttonTap)
+                xpSystem.grantBonusLevels(1)
+                return
+            }
         }
 
         if isInMovementZone(location) {
             joystick.beginDrag()
             joystick.updateDrag(touchLocation: touch.location(in: hudLayer))
             isJoystickTracking = true
+            print("[JOY] BEGAN at \(location) touches.count=\(touches.count) allTouches=\(event?.allTouches?.count ?? -1)")
+        } else {
+            print("[JOY] touchesBegan OUTSIDE movement zone at \(location) — no-op")
         }
     }
 
     // Multi-touch is disabled on the hosting SKView (see GameRootView) — `touches.first` is always
     // THE touch, never one of several, so there is nothing to match against a stored reference here.
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard isJoystickTracking, let touch = touches.first else { return }
+        guard isJoystickTracking else {
+            print("[JOY] touchesMoved IGNORED — isJoystickTracking already false. touches.count=\(touches.count) phase=\(touches.first?.phase.rawValue ?? -1)")
+            return
+        }
+        guard let touch = touches.first else {
+            print("[JOY] touchesMoved fired with EMPTY touches set while tracking=true")
+            return
+        }
         joystick.updateDrag(touchLocation: touch.location(in: hudLayer))
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        print("[JOY] touchesEnded fired. isJoystickTracking=\(isJoystickTracking) touches.count=\(touches.count) allTouches=\(event?.allTouches?.count ?? -1)")
         guard isJoystickTracking else { return }
         joystick.endDrag()
         isJoystickTracking = false
+        print("[JOY] ENDED — isJoystickTracking now false")
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        print("[JOY] touchesCancelled fired. isJoystickTracking=\(isJoystickTracking) touches.count=\(touches.count) allTouches=\(event?.allTouches?.count ?? -1)")
         guard isJoystickTracking else { return }
         joystick.endDrag()
         isJoystickTracking = false
