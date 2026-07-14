@@ -1,0 +1,16 @@
+.DS_Store
+build/
+build-device/
+build-release/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.ipa
+*.p8
+*.p12
+*.mobileprovision
+GoogleService-Info.plist
+node_modules/
+backend/functions/lib/
+backend/.firebase/
+backend/firebase-debug.log

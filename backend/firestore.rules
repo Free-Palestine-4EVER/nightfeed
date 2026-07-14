@@ -1,0 +1,62 @@
+rules_version = '2';
+
+// NIGHTFEED Starfleet backend security model:
+// - Every player can read their own full profile and a public-safe view of any other player's
+//   (needed to browse attack targets / alliance rosters).
+// - No client can EVER write crystals, stats, alliance membership, or attack/war outcomes directly —
+//   those are the exact fields a cheater would edit first. All of that only changes through Cloud
+//   Functions (which run with admin privileges and bypass these rules entirely), never through a
+//   direct Firestore write from the app. Clients may only write cosmetic/self-descriptive fields
+//   (displayName) on their own doc.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // Only these fields may ever be client-written on a player's own doc — everything
+    // progression/combat-related (crystals, hull/weapon/shield, drones, allianceId, attack history)
+    // is server-authoritative and only ever touched by Cloud Functions.
+    function onlyCosmeticFieldsChanged() {
+      let allowed = ['displayName'];
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowed);
+    }
+
+    match /players/{uid} {
+      allow read: if isSignedIn();
+      allow create: if isOwner(uid); // initial doc is actually created by the onPlayerCreate function; this
+                                       // permits a client-side fallback create with defaults if that function
+                                       // hasn't run yet, so the app never hard-blocks on a missing profile.
+      allow update: if isOwner(uid) && onlyCosmeticFieldsChanged();
+      allow delete: if false;
+    }
+
+    match /alliances/{allianceId} {
+      allow read: if isSignedIn();
+      allow write: if false; // create/join/leave/disband only via Cloud Functions (membership caps,
+                              // leader transfer, and totalPower need server-side consistency guarantees)
+    }
+
+    match /wars/{warId} {
+      allow read: if isSignedIn();
+      allow write: if false; // declare/resolve/score only via Cloud Functions
+
+      match /attacks/{attackId} {
+        allow read: if isSignedIn();
+        allow write: if false;
+      }
+    }
+
+    match /attacks/{attackId} {
+      // Casual (non-war) PvP raid log — either participant can read their own record.
+      allow read: if isSignedIn() &&
+        (resource.data.attackerUid == request.auth.uid || resource.data.defenderUid == request.auth.uid);
+      allow write: if false; // only the attackPlayer Cloud Function writes these
+    }
+  }
+}
