@@ -87,3 +87,25 @@ export const MAX_LOOT_FRACTION = 0.12;
 
 export const WAR_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
 export const MAX_ALLIANCE_MEMBERS = 30;
+
+// Fleet marketplace — players list an OWNED drone for sale in exchange for Crystals. This is the
+// Crystals-only, no-cash-value alternative to real-money NFT trading: nothing here has value outside
+// the game, there is no external token, and a listing is just a Firestore doc with a server-enforced
+// atomic ownership + currency swap (see marketplace.ts). Starships themselves aren't tradeable — a
+// player's hull/weapon/shield levels are their own progression, not a discrete item to hand off — but
+// drones are genuinely inventory-like (owned + leveled independently), so they're the tradeable unit.
+export interface ListingDoc {
+  id: string;
+  sellerUid: string;
+  droneKind: DroneKind;
+  droneLevel: number; // snapshot at listing time — buyer knows exactly what they're getting
+  priceCrystals: number;
+  status: "active" | "sold" | "cancelled";
+  createdAt: number;
+  buyerUid?: string;
+  resolvedAt?: number;
+}
+
+export const MIN_LISTING_PRICE = 10;
+export const MAX_LISTING_PRICE = 20000;
+export const MARKETPLACE_FEE_FRACTION = 0.05; // 5% sink to the "house" (burned, not credited anywhere) — keeps Crystal supply from just circulating infinitely between two accounts

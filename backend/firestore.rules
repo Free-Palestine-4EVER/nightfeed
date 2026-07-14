@@ -58,5 +58,13 @@ service cloud.firestore {
         (resource.data.attackerUid == request.auth.uid || resource.data.defenderUid == request.auth.uid);
       allow write: if false; // only the attackPlayer Cloud Function writes these
     }
+
+    match /listings/{listingId} {
+      // Anyone signed in can browse the marketplace; only createListing/cancelListing/purchaseListing
+      // (Cloud Functions) ever write a listing — direct client writes would let a seller fake a price
+      // or a buyer fake a purchase without actually spending Crystals.
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
   }
 }

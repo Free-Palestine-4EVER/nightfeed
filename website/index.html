@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NIGHTFEED — Survive the Night</title>
+<meta name="description" content="NIGHTFEED is a top-down survivor-roguelite for iOS. Eight weapons, seven potions, four familiars, and a growing Starfleet Command empire beyond the night.">
+<meta property="og:title" content="NIGHTFEED — Survive the Night">
+<meta property="og:description" content="A survivor-roguelite for iOS. Auto-firing weapons, escalating waves, and a starfleet empire waiting beyond the dark.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://www.nightfeed.online">
+<meta name="theme-color" content="#0a0512">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌙</text></svg>">
+<style>
+  :root{
+    --bg:#08040f; --bg2:#0f0818; --ember:#ff7a2e; --ember-bright:#ffa552;
+    --violet:#8b2fb8; --violet-dim:#4d1a68; --moon:#ede9ff; --moon-dim:rgba(237,233,255,.55);
+    --blood:#cc1a2e; --cyan:#4fd6ff; --panel:rgba(20,10,30,.72); --stroke:rgba(139,47,184,.35);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:radial-gradient(ellipse at 50% -10%, #1a0d2e 0%, var(--bg) 55%, #050208 100%);
+    color:var(--moon); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    overflow-x:hidden; min-height:100vh;
+  }
+  a{color:inherit; text-decoration:none}
+  .wrap{max-width:1120px; margin:0 auto; padding:0 24px}
+
+  /* ---------- starfield ---------- */
+  #stars{position:fixed; inset:0; z-index:0; pointer-events:none}
+  .star{position:absolute; background:#fff; border-radius:50%; opacity:.5; animation:twinkle 4s ease-in-out infinite}
+  @keyframes twinkle{0%,100%{opacity:.15}50%{opacity:.85}}
+  .ember-particle{position:absolute; border-radius:50%; background:radial-gradient(circle, var(--ember-bright), transparent 70%); opacity:0; animation:rise linear infinite}
+  @keyframes rise{0%{opacity:0; transform:translateY(0) translateX(0)}10%{opacity:.7}90%{opacity:.3}100%{opacity:0; transform:translateY(-120vh) translateX(var(--drift,20px))}}
+
+  /* ---------- nav ---------- */
+  nav{position:sticky; top:0; z-index:50; backdrop-filter:blur(14px); background:rgba(8,4,15,.55); border-bottom:1px solid rgba(139,47,184,.18)}
+  nav .wrap{display:flex; align-items:center; justify-content:space-between; height:64px}
+  .logo{font-weight:800; letter-spacing:2px; font-size:18px; background:linear-gradient(135deg,var(--moon),var(--violet) 140%); -webkit-background-clip:text; background-clip:text; color:transparent}
+  .navlinks{display:flex; gap:28px; font-size:14px; color:var(--moon-dim)}
+  .navlinks a:hover{color:var(--moon)}
+  .cta-small{background:var(--ember); color:#1a0800; padding:9px 18px; border-radius:10px; font-weight:700; font-size:13px}
+
+  /* ---------- hero ---------- */
+  header.hero{position:relative; z-index:1; padding:120px 0 90px; text-align:center}
+  .eyebrow{display:inline-block; font-size:12px; letter-spacing:3px; color:var(--ember-bright); border:1px solid rgba(255,122,46,.4); padding:6px 16px; border-radius:999px; margin-bottom:28px; opacity:0}
+  .fadeup{opacity:0; transform:translateY(28px); transition:opacity .8s ease, transform .8s ease}
+  .fadeup.in{opacity:1; transform:translateY(0)}
+  h1.title{font-size:clamp(48px,10vw,104px); font-weight:900; letter-spacing:1px; line-height:.95;
+    background:linear-gradient(180deg,#fff 10%,var(--moon) 45%,var(--violet) 130%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    text-shadow:0 0 60px rgba(139,47,184,.35); margin-bottom:22px}
+  .tagline{font-size:clamp(16px,2.4vw,22px); color:var(--moon-dim); max-width:560px; margin:0 auto 40px; font-weight:400}
+  .cta-row{display:flex; gap:16px; justify-content:center; flex-wrap:wrap}
+  .btn{padding:16px 32px; border-radius:14px; font-weight:800; font-size:16px; display:inline-flex; align-items:center; gap:10px; transition:transform .18s ease, box-shadow .18s ease}
+  .btn:hover{transform:translateY(-2px)}
+  .btn-primary{background:linear-gradient(135deg,var(--ember),var(--ember-bright)); color:#1a0800; box-shadow:0 10px 40px -10px rgba(255,122,46,.6)}
+  .btn-ghost{background:rgba(139,47,184,.12); color:var(--moon); border:1px solid var(--stroke)}
+  .note{margin-top:18px; font-size:13px; color:var(--moon-dim)}
+
+  /* ---------- phone mock ---------- */
+  .phone-frame{position:relative; z-index:1; max-width:300px; margin:70px auto 0; border-radius:44px; border:6px solid #1c1226; box-shadow:0 40px 100px -20px rgba(139,47,184,.55), 0 0 0 1px rgba(255,255,255,.04) inset; overflow:hidden}
+  .phone-frame img{display:block; width:100%; height:auto}
+
+  /* ---------- sections ---------- */
+  section{position:relative; z-index:1; padding:110px 0}
+  .section-head{text-align:center; max-width:640px; margin:0 auto 64px}
+  .section-head .eyebrow{margin-bottom:16px}
+  h2{font-size:clamp(30px,5vw,46px); font-weight:800; margin-bottom:14px; letter-spacing:.5px}
+  .section-sub{color:var(--moon-dim); font-size:16px; line-height:1.6}
+
+  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:20px}
+  .card{background:var(--panel); border:1px solid var(--stroke); border-radius:18px; padding:28px; transition:transform .25s ease, border-color .25s ease, background .25s ease}
+  .card:hover{transform:translateY(-4px); border-color:rgba(139,47,184,.7); background:rgba(30,15,45,.85)}
+  .card .icon{font-size:28px; margin-bottom:14px; display:block}
+  .card h3{font-size:17px; font-weight:700; margin-bottom:8px}
+  .card p{font-size:13.5px; color:var(--moon-dim); line-height:1.55}
+
+  /* weapons/potions strip */
+  .chip-row{display:flex; flex-wrap:wrap; gap:10px; justify-content:center}
+  .chip{background:rgba(139,47,184,.14); border:1px solid var(--stroke); padding:9px 16px; border-radius:999px; font-size:13px; color:var(--moon)}
+  .chip.ember{background:rgba(255,122,46,.12); border-color:rgba(255,122,46,.35); color:var(--ember-bright)}
+  .chip.cyan{background:rgba(79,214,255,.1); border-color:rgba(79,214,255,.3); color:var(--cyan)}
+
+  /* starfleet band */
+  .fleet-band{background:linear-gradient(135deg, rgba(79,214,255,.08), rgba(139,47,184,.1)); border-top:1px solid rgba(79,214,255,.18); border-bottom:1px solid rgba(79,214,255,.18)}
+  .fleet-band .wrap{display:grid; grid-template-columns:1.1fr .9fr; gap:60px; align-items:center}
+  @media (max-width:800px){.fleet-band .wrap{grid-template-columns:1fr; text-align:center}}
+  .fleet-badge{display:inline-block; font-size:11px; letter-spacing:2px; color:var(--cyan); border:1px solid rgba(79,214,255,.4); padding:5px 14px; border-radius:999px; margin-bottom:18px}
+  .fleet-band h2{background:linear-gradient(135deg,#fff,var(--cyan) 140%); -webkit-background-clip:text; background-clip:text; color:transparent}
+  .fleet-list{list-style:none; margin-top:22px; display:flex; flex-direction:column; gap:12px}
+  .fleet-list li{font-size:14.5px; color:var(--moon-dim); display:flex; gap:10px; align-items:flex-start}
+  .fleet-list li b{color:var(--moon); font-weight:600}
+  .fleet-visual{position:relative; aspect-ratio:1; max-width:340px; margin:0 auto; display:grid; place-items:center}
+  .fleet-orb{position:absolute; inset:0; border-radius:50%; background:radial-gradient(circle at 35% 30%, rgba(79,214,255,.25), transparent 60%); filter:blur(4px); animation:pulse 4s ease-in-out infinite}
+  @keyframes pulse{0%,100%{transform:scale(1); opacity:.7}50%{transform:scale(1.06); opacity:1}}
+  .fleet-ship{font-size:88px; position:relative; z-index:1; filter:drop-shadow(0 0 30px rgba(79,214,255,.5))}
+
+  /* download */
+  .download{text-align:center}
+  .badge-row{display:flex; gap:16px; justify-content:center; flex-wrap:wrap; margin-top:30px}
+  .store-badge{background:#000; border:1px solid rgba(255,255,255,.2); border-radius:12px; padding:12px 22px; display:flex; align-items:center; gap:10px; font-size:13px; color:#fff; opacity:.55; cursor:default}
+  .store-badge b{display:block; font-size:16px}
+
+  footer{position:relative; z-index:1; border-top:1px solid rgba(139,47,184,.18); padding:48px 0; text-align:center; color:var(--moon-dim); font-size:13px}
+  footer .links{display:flex; gap:22px; justify-content:center; margin-bottom:16px; flex-wrap:wrap}
+  footer .links a:hover{color:var(--moon)}
+</style>
+</head>
+<body>
+
+<div id="stars"></div>
+
+<nav>
+  <div class="wrap">
+    <div class="logo">NIGHTFEED</div>
+    <div class="navlinks">
+      <a href="#weapons">Arsenal</a>
+      <a href="#fleet">Starfleet</a>
+      <a href="#download">Download</a>
+      <a href="/support">Support</a>
+    </div>
+    <a href="#download" class="cta-small">Play Now</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow fadeup">A SURVIVOR-ROGUELITE FOR iOS</div>
+    <h1 class="title fadeup">SURVIVE<br>THE&nbsp;NIGHT</h1>
+    <p class="tagline fadeup">Drag to move. Your weapons fire on their own. Every level is a choice —
+      pick your build, evolve your arsenal, and outlast waves that never stop climbing.</p>
+    <div class="cta-row fadeup">
+      <a href="#download" class="btn btn-primary">⬇ Download for iOS</a>
+      <a href="#weapons" class="btn btn-ghost">See the Arsenal</a>
+    </div>
+    <div class="phone-frame fadeup">
+      <img src="/screenshot-menu.jpg" alt="NIGHTFEED main menu screenshot" loading="lazy">
+    </div>
+  </div>
+</header>
+
+<section id="weapons">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow fadeup">THE ARSENAL</div>
+      <h2 class="fadeup">Eight weapons. Two evolutions.<br>One night to master them.</h2>
+      <p class="section-sub fadeup">Every weapon fires on its own — level them up, pair the right passive,
+        and unlock a devastating evolved form.</p>
+    </div>
+    <div class="chip-row fadeup">
+      <span class="chip ember">Fang Bolt</span>
+      <span class="chip">Ember Orbit</span>
+      <span class="chip">Nova Pulse</span>
+      <span class="chip ember">Blood Lance</span>
+      <span class="chip">Bat Swarm</span>
+      <span class="chip">Reaper Whirl</span>
+      <span class="chip">Void Rift</span>
+      <span class="chip ember">Star Shard</span>
+      <span class="chip cyan">★ Moonfang Barrage</span>
+      <span class="chip cyan">★ Crimson Maelstrom</span>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow fadeup">SURVIVE, LOOT, GROW</div>
+      <h2 class="fadeup">Every run is a little different.</h2>
+    </div>
+    <div class="grid">
+      <div class="card fadeup">
+        <span class="icon">⚔️</span>
+        <h3>20-level progression</h3>
+        <p>Weapons and passives scale a full 20 levels deep — a real arc across an 18-minute run, not a quick ceiling.</p>
+      </div>
+      <div class="card fadeup">
+        <span class="icon">🧪</span>
+        <h3>7 potions</h3>
+        <p>Rare field pickups — instant invincibility, guaranteed crits, a free level-up, or an instant gem magnet.</p>
+      </div>
+      <div class="card fadeup">
+        <span class="icon">🐾</span>
+        <h3>4 familiars</h3>
+        <p>Ember Wisp, Bone Hound, Storm Sprite, Grave Moth — unlock and bring up to two into every run.</p>
+      </div>
+      <div class="card fadeup">
+        <span class="icon">👹</span>
+        <h3>A real threat curve</h3>
+        <p>Four enemy types, including the Nightmaw mini-boss on a timer, escalating smoothly across the whole run.</p>
+      </div>
+      <div class="card fadeup">
+        <span class="icon">🏪</span>
+        <h3>20-item permanent shop</h3>
+        <p>Gold earned every run buys lasting upgrades — stats, familiars, lifesteal, dodge, revives, and more.</p>
+      </div>
+      <div class="card fadeup">
+        <span class="icon">🎮</span>
+        <h3>One thumb, full control</h3>
+        <p>A fixed, always-on virtual stick — drag anywhere on the left/bottom of the screen, no menus mid-fight.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="fleet" class="fleet-band">
+  <div class="wrap">
+    <div>
+      <div class="fleet-badge fadeup">STARFLEET COMMAND — NEW</div>
+      <h2 class="fadeup">Beyond the night, an empire waits.</h2>
+      <p class="section-sub fadeup">A second layer to NIGHTFEED: build a starship, crew it with drones,
+        and claim a growing map of planets — funded by Crystals earned in every run.</p>
+      <ul class="fleet-list fadeup">
+        <li>🚀 <span><b>Upgrade your starship</b> — hull, weapons, and shields, all persistent.</span></li>
+        <li>🤖 <span><b>Crew it with drones</b> — Interceptor, Aegis, and Harvester, each with its own role.</span></li>
+        <li>🪐 <span><b>Claim the star map</b> — five planets to unlock, from Emberwatch to Ashenveil.</span></li>
+        <li>⚔️ <span><b>Alliances & clan wars</b> — coming soon: band together and raid rival fleets.</span></li>
+      </ul>
+    </div>
+    <div class="fleet-visual fadeup">
+      <div class="fleet-orb"></div>
+      <div class="fleet-ship">🛸</div>
+    </div>
+  </div>
+</section>
+
+<section id="download" class="download">
+  <div class="wrap">
+    <div class="eyebrow fadeup">GET NIGHTFEED</div>
+    <h2 class="fadeup">Free to play. No account required.</h2>
+    <p class="section-sub fadeup" style="max-width:480px;margin:0 auto">Optional ads only ever offer a
+      revive or bonus gold — never required to keep playing.</p>
+    <div class="badge-row fadeup">
+      <span class="store-badge">🍎 <span><small>Coming soon to the</small><b>App Store</b></span></span>
+    </div>
+    <p class="note fadeup">Submitted for review — check back shortly, or follow along for the launch.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="links">
+      <a href="/privacy">Privacy Policy</a>
+      <a href="/support">Support</a>
+      <a href="mailto:zzeid.exe@gmail.com">Contact</a>
+    </div>
+    <div>© 2026 NIGHTFEED. A nocturnal survival rite.</div>
+  </div>
+</footer>
+
+<script>
+  // Starfield + ember particles — pure CSS/JS, no external deps.
+  (function(){
+    var starsEl = document.getElementById('stars');
+    var frag = document.createDocumentFragment();
+    for (var i = 0; i < 90; i++) {
+      var s = document.createElement('div');
+      s.className = 'star';
+      var size = Math.random() * 2 + 1;
+      s.style.width = s.style.height = size + 'px';
+      s.style.left = Math.random() * 100 + 'vw';
+      s.style.top = Math.random() * 100 + 'vh';
+      s.style.animationDelay = (Math.random() * 4) + 's';
+      frag.appendChild(s);
+    }
+    for (var j = 0; j < 14; j++) {
+      var e = document.createElement('div');
+      e.className = 'ember-particle';
+      var esize = Math.random() * 5 + 3;
+      e.style.width = e.style.height = esize + 'px';
+      e.style.left = Math.random() * 100 + 'vw';
+      e.style.bottom = '-20px';
+      e.style.setProperty('--drift', (Math.random() * 80 - 40) + 'px');
+      e.style.animationDuration = (Math.random() * 10 + 12) + 's';
+      e.style.animationDelay = (Math.random() * 12) + 's';
+      frag.appendChild(e);
+    }
+    starsEl.appendChild(frag);
+  })();
+
+  // Scroll-reveal for every .fadeup element, staggered within each viewport batch.
+  (function(){
+    var els = document.querySelectorAll('.fadeup');
+    var seen = new Set();
+    var io = new IntersectionObserver(function(entries){
+      var batch = entries.filter(function(en){ return en.isIntersecting && !seen.has(en.target); });
+      batch.forEach(function(en, i){
+        seen.add(en.target);
+        setTimeout(function(){ en.target.classList.add('in'); }, i * 70);
+        io.unobserve(en.target);
+      });
+    }, { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
+    els.forEach(function(el){ io.observe(el); });
+  })();
+</script>
+
+</body>
+</html>

@@ -23,7 +23,7 @@ private struct SpriteKitContainer: UIViewRepresentable {
         view.showsFPS = false
         view.showsNodeCount = false
         view.isMultipleTouchEnabled = false
-        view.presentScene(MenuScene.newScene())
+        view.presentScene(CommandDeckScene.newScene())
         return view
     }
 

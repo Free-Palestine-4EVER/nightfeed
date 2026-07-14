@@ -47,6 +47,8 @@ final class MenuScene: SKScene {
     private var subtitleLabel: SKLabelNode!
     private var bestTimeLabel: SKLabelNode!
     private var goldLabel: SKLabelNode!
+    private var backToCommandDeckButton: SKShapeNode!
+    private var backToCommandDeckLabel: SKLabelNode!
     private var playButton: SKShapeNode!
     private var playLabel: SKLabelNode!
     private var shopButton: SKShapeNode!
@@ -327,6 +329,19 @@ final class MenuScene: SKScene {
     // MARK: - Buttons
 
     private func buildButtons() {
+        // Back to the Starfleet Command home screen — MenuScene is now specifically the Survival Run
+        // menu, reached FROM CommandDeckScene's "SURVIVAL RUN" button, so it needs an explicit way back.
+        let (back, backText) = Self.makeButton(text: "◀ COMMAND DECK", width: 172, height: 36,
+                                                fill: Palette.rowFill, stroke: Palette.panelStroke,
+                                                textColor: Palette.moonlightDim,
+                                                fontSize: 12.5, fontName: "AvenirNext-DemiBold")
+        back.name = "backToCommandDeck"
+        backText.name = "backToCommandDeck"
+        contentLayer.addChild(back)
+        contentLayer.addChild(backText)
+        backToCommandDeckButton = back
+        backToCommandDeckLabel = backText
+
         let (play, playText) = Self.makeButton(text: "PLAY", width: 220, height: 68,
                                                 fill: Palette.ember, stroke: Palette.emberBright,
                                                 textColor: SKColor(red: 0.12, green: 0.03, blue: 0.02, alpha: 1),
@@ -815,6 +830,9 @@ final class MenuScene: SKScene {
             bg.position = CGPoint(x: w / 2, y: h / 2)
         }
 
+        backToCommandDeckButton.position = CGPoint(x: 16 + 86, y: h - 40)
+        backToCommandDeckLabel.position = backToCommandDeckButton.position
+
         let moonPos = CGPoint(x: w * 0.80, y: h * 0.87)
         moonNode.position = moonPos
         moonGlow.position = moonPos
@@ -1113,7 +1131,7 @@ final class MenuScene: SKScene {
                 }
                 return false
             } else {
-                return name == "play" || name == "shopToggle" || name == "goldRushAction"
+                return name == "play" || name == "shopToggle" || name == "goldRushAction" || name == "backToCommandDeck"
             }
         }
         return matched.max(by: { $0.zPosition < $1.zPosition })?.name
@@ -1127,6 +1145,8 @@ final class MenuScene: SKScene {
             if pressed { JuiceEffects.pressDown(node) } else { JuiceEffects.releaseBounce(node) }
         }
         switch name {
+        case "backToCommandDeck":
+            apply(backToCommandDeckButton)
         case "play":
             apply(playButton)
         case "shopToggle":
@@ -1160,6 +1180,9 @@ final class MenuScene: SKScene {
 
     private func handleTap(name: String) {
         switch name {
+        case "backToCommandDeck":
+            AudioManager.shared.playSFX(.buttonTap)
+            view?.presentScene(CommandDeckScene.newScene(), transition: .reveal(with: .up, duration: 0.45))
         case "play":
             AudioManager.shared.playSFX(.buttonTap)
             AudioManager.shared.hapticImpact(.medium)
